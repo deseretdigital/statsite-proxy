@@ -30,7 +30,7 @@ static int SHOULD_RUN = 1;
  * Prints our usage to stderr
  */
 void show_usage() {
-    fprintf(stderr, "usage: statsite [-h] [-f filename]\n\
+    fprintf(stderr, "usage: statsite-proxy [-h] [-f filename]\n\
 \n\
     -h : Displays this help info\n\
     -f : Reads the configuration from this file\n\
@@ -83,7 +83,7 @@ void setup_syslog() {
     if (isatty(1)) {
         flags |= LOG_PERROR;
     }
-    openlog("statsite", flags, LOG_LOCAL0);
+    openlog("statsite-proxy", flags, LOG_LOCAL0);
 }
 
 
@@ -182,10 +182,10 @@ int main(int argc, char **argv) {
     }
 
     // Log that we are starting up
-    syslog(LOG_INFO, "Starting statsite.");
+    syslog(LOG_INFO, "Starting statsite-proxy.");
 
     // Initialize the networking
-    statsite_networking *netconf = NULL;
+    statsite_proxy_networking *netconf = NULL;
     int net_res = init_networking(config, &netconf);
     if (net_res != 0) {
         syslog(LOG_ERR, "Failed to initialize networking!");
@@ -210,9 +210,6 @@ int main(int argc, char **argv) {
 
     // Begin the shutdown/cleanup
     shutdown_networking(netconf);
-
-    // Do the final flush
-    final_flush();
 
     // If daemonized, remove the pid file
     if (config->daemonize && unlink(config->pid_file)) {

@@ -65,7 +65,14 @@ END_TEST
 
 START_TEST(test_config_basic_config)
 {
-    int fh = open("/tmp/basic_config", O_CREAT|O_RDWR|O_TRUNC, 0777);
+	// Check for and cleanup leftover config file
+	int fh = open("/tmp/basic_config", O_RDONLY, 0777);
+	if (fh) {
+		unlink("/tmp/basic_config");
+	}
+
+	// Write test config file
+    fh = open("/tmp/basic_config", O_CREAT|O_RDWR, 0777);
     char *buf = "[statsite-proxy]\n\
 port = 10000\n\
 udp_port = 10001\n\
@@ -84,13 +91,12 @@ pid_file = /tmp/statsite.pid\n";
     // Should get the config
     fail_unless(config.tcp_port == 10000);
     fail_unless(config.udp_port == 10001);
-    fail_unless(strcmp(config.servers, "myservers.conf") == 0,
-    		"found %s should be myservers.conf", config.servers);
+    fail_unless(strcmp(config.servers, "myservers.conf") == 0);
     fail_unless(strcmp(config.log_level, "INFO") == 0);
     fail_unless(config.daemonize == true);
     fail_unless(strcmp(config.pid_file, "/tmp/statsite.pid") == 0);
 
-    //unlink("/tmp/basic_config");
+    unlink("/tmp/basic_config");
 }
 END_TEST
 

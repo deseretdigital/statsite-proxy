@@ -3,15 +3,15 @@
 #include "config.h"
 
 // Network configuration struct
-typedef struct statsite_networking statsite_networking;
-typedef struct conn_info statsite_conn_info;
+typedef struct statsite_proxy_networking statsite_proxy_networking;
+typedef struct conn_info statsite_proxy_conn_info;
 
 /**
  * Initializes the networking interfaces
  * @arg config Takes the statsite server configuration
  * @arg netconf Output. The configuration for the networking stack.
  */
-int init_networking(statsite_proxy_config *config, statsite_networking **netconf_out);
+int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out);
 
 /**
  * Entry point for threads to join the networking
@@ -19,14 +19,14 @@ int init_networking(statsite_proxy_config *config, statsite_networking **netconf
  * network stack is shutdown.
  * @arg netconf The configuration for the networking stack.
  */
-void start_networking_worker(statsite_networking *netconf);
+void start_networking_worker(statsite_proxy_networking *netconf);
 
 /**
  * Shuts down all the connections
  * and listeners and prepares to exit.
  * @arg netconf The config for the networking stack.
  */
-int shutdown_networking(statsite_networking *netconf);
+int shutdown_networking(statsite_proxy_networking *netconf);
 
 /*
  * Connection related methods. These are exposed so
@@ -36,7 +36,7 @@ int shutdown_networking(statsite_networking *netconf);
 /**
  * Closes the client connection.
  */
-void close_client_connection(statsite_conn_info *conn);
+void close_client_connection(statsite_proxy_conn_info *conn);
 
 /**
  * Sends a response to a client.
@@ -46,7 +46,7 @@ void close_client_connection(statsite_conn_info *conn);
  * @arg num_bufs The number of response buffers
  * @return 0 on success.
  */
-int send_client_response(statsite_conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs);
+int send_client_response(statsite_proxy_conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs);
 
 /**
  * This method is used to conveniently extract commands from the
@@ -63,7 +63,7 @@ int send_client_response(statsite_conn_info *conn, char **response_buffers, int 
  * @arg should_free Output parameter, should the buffer be freed by the caller.
  * @return 0 on success, -1 if the terminator is not found.
  */
-int extract_to_terminator(statsite_conn_info *conn, char terminator, char **buf, int *buf_len, int *should_free);
+int extract_to_terminator(statsite_proxy_conn_info *conn, char terminator, char **buf, int *buf_len, int *should_free);
 
 /**
  * This method is used to query how much data is available
@@ -71,7 +71,7 @@ int extract_to_terminator(statsite_conn_info *conn, char terminator, char **buf,
  * @arg conn The client connection
  * @return The bytes available
  */
-uint64_t available_bytes(statsite_conn_info *conn);
+uint64_t available_bytes(statsite_proxy_conn_info *conn);
 
 /**
  * This method is used to peek into the input buffer without
@@ -81,7 +81,7 @@ uint64_t available_bytes(statsite_conn_info *conn);
  * @arg buf The output buffer to write to
  * @return 0 on success, -1 if there is insufficient data.
  */
-int peek_client_bytes(statsite_conn_info *conn, int bytes, char* buf);
+int peek_client_bytes(statsite_proxy_conn_info *conn, int bytes, char* buf);
 
 /**
  * This method is used to seek the input buffer without
@@ -91,7 +91,7 @@ int peek_client_bytes(statsite_conn_info *conn, int bytes, char* buf);
  * @arg bytes The number of bytes to seek
  * @return 0 on success, -1 if there is insufficient data.
  */
-int seek_client_bytes(statsite_conn_info *conn, int bytes);
+int seek_client_bytes(statsite_proxy_conn_info *conn, int bytes);
 
 /**
  * This method is used to read and consume the input buffer
@@ -101,6 +101,6 @@ int seek_client_bytes(statsite_conn_info *conn, int bytes);
  * @arg should_free Output parameter, should the buffer be freed by the caller.
  * @return 0 on success, -1 if there is insufficient data.
  */
-int read_client_bytes(statsite_conn_info *conn, int bytes, char** buf, int* should_free);
+int read_client_bytes(statsite_proxy_conn_info *conn, int bytes, char** buf, int* should_free);
 
 #endif

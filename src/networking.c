@@ -53,7 +53,7 @@
  * Stores the thread specific user data.
  */
 typedef struct {
-    statsite_networking *netconf;
+    statsite_proxy_networking *netconf;
     ev_io *watcher;
     int ready_events;
 } worker_ev_userdata;
@@ -75,7 +75,7 @@ typedef struct {
 struct conn_info {
     volatile int ref_count;
 
-    statsite_networking *netconf;
+    statsite_proxy_networking *netconf;
     ev_io client;
     volatile int should_schedule;
     circular_buffer input;
@@ -130,7 +130,7 @@ typedef struct async_event async_event;
  * used to store the state of the networking
  * stack.
  */
-struct statsite_networking {
+struct statsite_proxy_networking {
     volatile int should_run;  // Should the workers continue to run
     statsite_proxy_config *config;
 
@@ -147,12 +147,11 @@ struct statsite_networking {
 
 
 // Static typedefs
-static void schedule_async(statsite_networking *netconf,
+static void schedule_async(statsite_proxy_networking *netconf,
                             ASYNC_EVENT_TYPE event_type,
                             ev_io *watcher);
 static void prepare_event(ev_io *watcher, int revents);
 static void handle_async_event(ev_async *watcher, int revents);
-static void handle_flush_event(ev_timer *watcher, int revents);
 static void handle_new_client(int listen_fd, worker_ev_userdata* data);
 static int handle_client_data(ev_io *watch, worker_ev_userdata* data);
 static int handle_udp_message(ev_io *watch, worker_ev_userdata* data);
@@ -160,7 +159,7 @@ static void invoke_event_handler(worker_ev_userdata* data);
 
 // Utility methods
 static int set_client_sockopts(int client_fd);
-static conn_info* get_conn(statsite_networking *netconf);
+static conn_info* get_conn(statsite_proxy_networking *netconf);
 static int send_client_response_buffered(conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs);
 static int send_client_response_direct(conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs);
 
@@ -186,7 +185,7 @@ static int circbuf_write(circular_buffer *buf, char *in, uint64_t bytes);
  * @arg netconf The network configuration
  * @return 0 on success.
  */
-static int setup_tcp_listener(statsite_networking *netconf) {
+static int setup_tcp_listener(statsite_proxy_networking *netconf) {
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr));
     addr.sin_family = PF_INET;
@@ -225,7 +224,7 @@ static int setup_tcp_listener(statsite_networking *netconf) {
  * @arg netconf The network configuration
  * @return 0 on success.
  */
-static int setup_udp_listener(statsite_networking *netconf) {
+static int setup_udp_listener(statsite_proxy_networking *netconf) {
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr));
     addr.sin_family = PF_INET;
@@ -268,9 +267,9 @@ static int setup_udp_listener(statsite_networking *netconf) {
  * @arg mgr The filter manager to pass up to the connection handlers
  * @arg netconf Output. The configuration for the networking stack.
  */
-int init_networking(statsite_proxy_config *config, statsite_networking **netconf_out) {
+int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out) {
     // Make the netconf structure
-    statsite_networking *netconf = calloc(1, sizeof(struct statsite_networking));
+    statsite_proxy_networking *netconf = calloc(1, sizeof(struct statsite_proxy_networking));
 
     // Initialize
     netconf->events = NULL;
@@ -314,10 +313,6 @@ int init_networking(statsite_proxy_config *config, statsite_networking **netconf
     ev_async_init(&netconf->loop_async, handle_async_event);
     ev_async_start(&netconf->loop_async);
 
-    // Setup the timer
-    ev_timer_init(&netconf->flush_timer, handle_flush_event, 10, 10);
-    ev_timer_start(&netconf->flush_timer);
-
     // Prepare the conn handlers
     init_conn_handler(config);
 
@@ -331,7 +326,7 @@ int init_networking(statsite_proxy_config *config, statsite_networking **netconf
  * Called to schedule an async event. Mostly a convenience
  * method to wrap some of the logic.
  */
-static void schedule_async(statsite_networking *netconf,
+static void schedule_async(statsite_proxy_networking *netconf,
                             ASYNC_EVENT_TYPE event_type,
                             ev_io *watcher) {
     // Make a new async event
@@ -406,16 +401,6 @@ static void handle_async_event(ev_async *watcher, int revents) {
         free(event);
         event = next;
     }
-}
-
-
-/**
- * Invoked when our flush timer is reached.
- * We need to instruct the connection handler about this.
- */
-static void handle_flush_event(ev_timer *watcher, int revents) {
-    // Inform the connection handler of the timeout
-    flush_interval_trigger();
 }
 
 /**
@@ -636,7 +621,7 @@ static void invoke_event_handler(worker_ev_userdata* data) {
     if (watcher == &data->netconf->udp_client) {
         // Read the message and process
         if (!handle_udp_message(watcher, data)) {
-            statsite_conn_handler handle = {data->netconf->config, watcher->data};
+            statsite_proxy_conn_handler handle = {data->netconf->config, watcher->data};
             handle_client_connect(&handle);
         }
 
@@ -655,7 +640,7 @@ static void invoke_event_handler(worker_ev_userdata* data) {
     incref_client_connection(conn);
 
     if (!handle_client_data(watcher, data)) {
-        statsite_conn_handler handle = {data->netconf->config, watcher->data};
+        statsite_proxy_conn_handler handle = {data->netconf->config, watcher->data};
         handle_client_connect(&handle);
     }
 
@@ -673,7 +658,7 @@ static void invoke_event_handler(worker_ev_userdata* data) {
  * network stack is shutdown.
  * @arg netconf The configuration for the networking stack.
  */
-void start_networking_worker(statsite_networking *netconf) {
+void start_networking_worker(statsite_proxy_networking *netconf) {
     // Allocate our user data
     worker_ev_userdata data;
     data.netconf = netconf;
@@ -703,7 +688,7 @@ void start_networking_worker(statsite_networking *netconf) {
  * and listeners and prepares to exit.
  * @arg netconf The config for the networking stack.
  */
-int shutdown_networking(statsite_networking *netconf) {
+int shutdown_networking(statsite_proxy_networking *netconf) {
     // Instruct the threads to shutdown
     netconf->should_run = 0;
 
@@ -905,7 +890,7 @@ static int send_client_response_direct(conn_info *conn, char **response_buffers,
  * @arg should_free Output parameter, should the buffer be freed by the caller.
  * @return 0 on success, -1 if the terminator is not found.
  */
-int extract_to_terminator(statsite_conn_info *conn, char terminator, char **buf, int *buf_len, int *should_free) {
+int extract_to_terminator(statsite_proxy_conn_info *conn, char terminator, char **buf, int *buf_len, int *should_free) {
     // First we need to find the terminator...
     char *term_addr = NULL;
     if (conn->input.write_cursor < conn->input.read_cursor) {
@@ -994,7 +979,7 @@ int extract_to_terminator(statsite_conn_info *conn, char terminator, char **buf,
  * @arg conn The client connection
  * @return The bytes available
  */
-uint64_t available_bytes(statsite_conn_info *conn) {
+uint64_t available_bytes(statsite_proxy_conn_info *conn) {
     // Query the circular buffer
     return circbuf_used_buf(&conn->input);
 }
@@ -1008,7 +993,7 @@ uint64_t available_bytes(statsite_conn_info *conn) {
  * @arg buf The output buffer to write to
  * @return 0 on success, -1 if there is insufficient data.
  */
-int peek_client_bytes(statsite_conn_info *conn, int bytes, char* buf) {
+int peek_client_bytes(statsite_proxy_conn_info *conn, int bytes, char* buf) {
     // Ensure we have sufficient data
     if (bytes > circbuf_used_buf(&conn->input)) return -1;
 
@@ -1031,7 +1016,7 @@ int peek_client_bytes(statsite_conn_info *conn, int bytes, char* buf) {
  * @arg bytes The number of bytes to seek
  * @return 0 on success, -1 if there is insufficient data.
  */
-int seek_client_bytes(statsite_conn_info *conn, int bytes) {
+int seek_client_bytes(statsite_proxy_conn_info *conn, int bytes) {
     if (bytes > circbuf_used_buf(&conn->input)) return -1;
     circbuf_advance_read(&conn->input, bytes);
     return 0;
@@ -1046,7 +1031,7 @@ int seek_client_bytes(statsite_conn_info *conn, int bytes) {
  * @arg should_free Output parameter, should the buffer be freed by the caller.
  * @return 0 on success, -1 if there is insufficient data.
  */
-int read_client_bytes(statsite_conn_info *conn, int bytes, char** buf, int* should_free) {
+int read_client_bytes(statsite_proxy_conn_info *conn, int bytes, char** buf, int* should_free) {
     if (bytes > circbuf_used_buf(&conn->input)) return -1;
 
     // Handle the wrap around case
@@ -1117,7 +1102,7 @@ static int set_client_sockopts(int client_fd) {
  * Returns the conn_info* object associated with the FD
  * or allocates a new one as necessary.
  */
-static conn_info* get_conn(statsite_networking *netconf) {
+static conn_info* get_conn(statsite_proxy_networking *netconf) {
     // Allocate space
     conn_info *conn = malloc(sizeof(conn_info));
 

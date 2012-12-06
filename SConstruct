@@ -11,11 +11,6 @@ env_statsite_without_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE -O3 -pt
 
 objs = env_statsite_with_err.Object('src/hashmap', 'src/hashmap.c')           + \
         env_statsite_with_err.Object('src/heap', 'src/heap.c')                + \
-        env_statsite_with_err.Object('src/cm_quantile', 'src/cm_quantile.c')  + \
-        env_statsite_with_err.Object('src/timer', 'src/timer.c')              + \
-        env_statsite_with_err.Object('src/counter', 'src/counter.c')          + \
-        env_statsite_with_err.Object('src/metrics', 'src/metrics.c')          + \
-        env_statsite_with_err.Object('src/streaming', 'src/streaming.c')      + \
         env_statsite_with_err.Object('src/config', 'src/config.c')            + \
         env_statsite_without_err.Object('src/networking', 'src/networking.c') + \
         env_statsite_without_err.Object('src/conn_handler', 'src/conn_handler.c')
@@ -24,7 +19,7 @@ statsite_libs = ["m", "pthread", murmur, inih]
 if platform.system() == 'Linux':
    statsite_libs.append("rt")
 
-statsite_proxy = env_statsite_with_err.Program('statsite_proxy', objs + ["src/statsite.c"], LIBS=statsite_libs)
+statsite_proxy = env_statsite_with_err.Program('statsite_proxy', objs + ["src/statsite_proxy.c"], LIBS=statsite_libs)
 statsite_proxy_test = env_statsite_without_err.Program('test_runner', objs + Glob("tests/runner.c"), LIBS=statsite_libs + ["check"])
 
 # By default, only compile statsite_proxy

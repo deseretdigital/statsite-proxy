@@ -6,8 +6,6 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <netinet/in.h>
-#include "metrics.h"
-#include "streaming.h"
 #include "conn_handler.h"
 
 /*
@@ -28,13 +26,9 @@
 #define BIN_OUT_PCT     0x80
 
 /* Static method declarations */
-static int handle_binary_client_connect(statsite_conn_handler *handle);
-static int handle_ascii_client_connect(statsite_conn_handler *handle);
+static int handle_binary_client_connect(statsite_proxy_conn_handler *handle);
+static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle);
 static int buffer_after_terminator(char *buf, int buf_len, char terminator, char **after_term, int *after_len);
-
-/* These are the quantiles we track */
-static double QUANTILES[] = {0.5, 0.95, 0.99};
-static int NUM_QUANTILES = 3;
 
 // This is the magic byte that indicates we are handling
 // a binary command, instead of an ASCII command. We use
@@ -42,177 +36,15 @@ static int NUM_QUANTILES = 3;
 static unsigned char BINARY_MAGIC_BYTE = 0xaa;
 static int BINARY_HEADER_SIZE = 12;
 
-/**
- * This is the current metrics object we are using
- */
-static metrics *GLOBAL_METRICS;
 static statsite_proxy_config *GLOBAL_CONFIG;
 
 /**
  * Invoked to initialize the conn handler layer.
  */
 void init_conn_handler(statsite_proxy_config *config) {
-    // Make the initial metrics object
-    metrics *m = malloc(sizeof(metrics));
-    int res = init_metrics(0.01, (double*)&QUANTILES, NUM_QUANTILES, m);
-    assert(res == 0);
-    GLOBAL_METRICS = m;
-
     // Store the config
     GLOBAL_CONFIG = config;
 }
-
-/**
- * Streaming callback to format our output
- */
-static int stream_formatter(FILE *pipe, void *data, metric_type type, char *name, void *value) {
-    #define STREAM(...) if (fprintf(pipe, __VA_ARGS__, (long long)tv->tv_sec) < 0) return 1;
-    struct timeval *tv = data;
-    switch (type) {
-        case KEY_VAL:
-            STREAM("kv.%s|%f|%lld\n", name, *(double*)value);
-            break;
-
-        case COUNTER:
-            STREAM("counts.%s|%f|%lld\n", name, counter_sum(value));
-            break;
-
-        case TIMER:
-            STREAM("timers.%s.sum|%f|%lld\n", name, timer_sum(value));
-            STREAM("timers.%s.mean|%f|%lld\n", name, timer_mean(value));
-            STREAM("timers.%s.lower|%f|%lld\n", name, timer_min(value));
-            STREAM("timers.%s.upper|%f|%lld\n", name, timer_max(value));
-            STREAM("timers.%s.count|%lld|%lld\n", name, timer_count(value));
-            STREAM("timers.%s.stdev|%f|%lld\n", name, timer_stddev(value));
-            STREAM("timers.%s.median|%f|%lld\n", name, timer_query(value, 0.5));
-            STREAM("timers.%s.p95|%f|%lld\n", name, timer_query(value, 0.95));
-            STREAM("timers.%s.p99|%f|%lld\n", name, timer_query(value, 0.99));
-            break;
-
-        default:
-            syslog(LOG_ERR, "Unknown metric type: %d", type);
-            break;
-    }
-    return 0;
-}
-
-/* Helps to write out a single binary result */
-#pragma pack(push,1)
-struct binary_out_prefix {
-    uint64_t timestamp;
-    uint8_t  type;
-    uint8_t  value_type;
-    uint16_t key_len;
-    double   val;
-};
-#pragma pack(pop)
-
-static int stream_bin_writer(FILE *pipe, uint64_t timestamp, unsigned char type,
-        unsigned char val_type, double val, char *name) {
-        uint16_t key_len = strlen(name) + 1;
-        struct binary_out_prefix out = {timestamp, type, val_type, key_len, val};
-        if (!fwrite(&out, sizeof(struct binary_out_prefix), 1, pipe)) return 1;
-        if (!fwrite(name, key_len, 1, pipe)) return 1;
-        return 0;
-}
-
-static int stream_formatter_bin(FILE *pipe, void *data, metric_type type, char *name, void *value) {
-    #define STREAM_BIN(...) if (stream_bin_writer(pipe, ((struct timeval *)data)->tv_sec, __VA_ARGS__, name)) return 1;
-    switch (type) {
-        case KEY_VAL:
-            STREAM_BIN(BIN_TYPE_KV, BIN_OUT_NO_TYPE, *(double*)value);
-            break;
-
-        case COUNTER:
-            STREAM_BIN(BIN_TYPE_COUNTER, BIN_OUT_SUM, counter_sum(value));
-            STREAM_BIN(BIN_TYPE_COUNTER, BIN_OUT_SUM_SQ, counter_squared_sum(value));
-            STREAM_BIN(BIN_TYPE_COUNTER, BIN_OUT_MEAN, counter_mean(value));
-            STREAM_BIN(BIN_TYPE_COUNTER, BIN_OUT_COUNT, counter_count(value));
-            STREAM_BIN(BIN_TYPE_COUNTER, BIN_OUT_STDDEV, counter_stddev(value));
-            STREAM_BIN(BIN_TYPE_COUNTER, BIN_OUT_MIN, counter_min(value));
-            STREAM_BIN(BIN_TYPE_COUNTER, BIN_OUT_MAX, counter_max(value));
-            break;
-
-        case TIMER:
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_SUM, timer_sum(value));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_SUM_SQ, timer_squared_sum(value));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_MEAN, timer_mean(value));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_COUNT, timer_count(value));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_STDDEV, timer_stddev(value));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_MIN, timer_min(value));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_MAX, timer_max(value));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_PCT | 50, timer_query(value, 0.5));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_PCT | 95, timer_query(value, 0.95));
-            STREAM_BIN(BIN_TYPE_TIMER, BIN_OUT_PCT | 99, timer_query(value, 0.99));
-            break;
-
-        default:
-            syslog(LOG_ERR, "Unknown metric type: %d", type);
-            break;
-    }
-    return 0;
-}
-
-/**
- * This is the thread that is invoked to handle flushing metrics
- */
-static void* flush_thread(void *arg) {
-    // Cast the args
-    metrics *m = arg;
-
-    // Get the current time
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-
-    // Determine which callback to use
-    stream_callback cb = (0)? stream_formatter_bin: stream_formatter;
-
-    // Stream the records
-    int res = stream_to_command(m, &tv, cb, "cat");
-    if (res != 0) {
-        syslog(LOG_WARNING, "Streaming command exited with status %d", res);
-    }
-
-    // Cleanup
-    destroy_metrics(m);
-    free(m);
-}
-
-/**
- * Invoked to when we've reached the flush interval timeout
- */
-void flush_interval_trigger() {
-    // Make a new metrics object
-    metrics *m = malloc(sizeof(metrics));
-    init_metrics(GLOBAL_METRICS->eps, (double*)&QUANTILES, NUM_QUANTILES, m);
-
-    // Swap with the new one
-    metrics *old = GLOBAL_METRICS;
-    GLOBAL_METRICS = m;
-
-    // Start a flush thread
-    pthread_t thread;
-    pthread_create(&thread, NULL, flush_thread, old);
-    pthread_detach(thread);
-}
-
-/**
- * Called when statsite is terminating to flush the
- * final set of metrics
- */
-void final_flush() {
-    // Get the last set of metrics
-    metrics *old = GLOBAL_METRICS;
-    GLOBAL_METRICS = NULL;
-
-    // Start a flush thread
-    pthread_t thread;
-    pthread_create(&thread, NULL, flush_thread, old);
-
-    // Wait for the thread to finish
-    pthread_join(thread, NULL);
-}
-
 
 /**
  * Invoked by the networking layer when there is new
@@ -222,7 +54,7 @@ void final_flush() {
  * @arg handle The connection related information
  * @return 0 on success.
  */
-int handle_client_connect(statsite_conn_handler *handle) {
+int handle_client_connect(statsite_proxy_conn_handler *handle) {
     // Try to read the magic character, bail if no data
     unsigned char magic = 0;
     if (peek_client_bytes(handle->conn, 1, &magic) == -1) return 0;
@@ -237,16 +69,15 @@ int handle_client_connect(statsite_conn_handler *handle) {
 
 /**
  * Invoked to handle ASCII commands. This is the default
- * mode for statsite, to be backwards compatible with statsd
+ * mode for statsite-proxy, to be backwards compatible with statsd
  * @arg handle The connection related information
  * @return 0 on success.
  */
-static int handle_ascii_client_connect(statsite_conn_handler *handle) {
+static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
     // Look for the next command line
-    char *buf, *key, *val_str, *type_str, *sample_str, *endptr;
+    char *buf, *val_str, *type_str;
     metric_type type;
-    int buf_len, should_free, status, i, after_len;
-    double val, sample_rate;
+    int buf_len, should_free, status, after_len;
     while (1) {
         status = extract_to_terminator(handle->conn, '\n', &buf, &buf_len, &should_free);
         if (status == -1) return 0; // Return if no command is available
@@ -272,28 +103,15 @@ static int handle_ascii_client_connect(statsite_conn_handler *handle) {
                     type = UNKNOWN;
             }
 
-            // Convert the value to a double
-            endptr = NULL;
-            val = strtod(val_str, &endptr);
+            // Apply consistent hashing
 
-            // Handle counter sampling if applicable
-            if (type == COUNTER && !buffer_after_terminator(type_str, after_len, '@', &sample_str, &after_len)) {
-                sample_rate = strtod(sample_str, &endptr);
-                if (sample_rate > 0 && sample_rate <= 1) {
-                    // Magnify the value
-                    val = val * (1.0 / sample_rate);
-                }
-            }
+            // Route metric
 
-            // Store the sample if we did the conversion
-            if (val != 0 || endptr != val_str) {
-                if (NULL != NULL)
-                    metrics_add_sample(GLOBAL_METRICS, COUNTER, NULL, 1);
 
-                metrics_add_sample(GLOBAL_METRICS, type, buf, val);
-            } else {
-                syslog(LOG_WARNING, "Failed value conversion! Input: %s", val_str);
-            }
+            // Testing
+            fprintf(stderr, "Received: %s\n", buf);
+
+
         } else {
             syslog(LOG_WARNING, "Failed parse metric! Input: %s", buf);
         }
@@ -311,13 +129,12 @@ static int handle_ascii_client_connect(statsite_conn_handler *handle) {
  * @arg handle The connection related information
  * @return 0 on success.
  */
-static int handle_binary_client_connect(statsite_conn_handler *handle) {
+static int handle_binary_client_connect(statsite_proxy_conn_handler *handle) {
     metric_type type;
     int status, should_free;
     char *key;
     unsigned char header[BINARY_HEADER_SIZE];
     uint8_t type_input;
-    double val;
     uint16_t key_len;
     while (1) {
         // Peek and check for the header. This is 12 bytes.
@@ -354,7 +171,6 @@ static int handle_binary_client_connect(statsite_conn_handler *handle) {
 
         // Extract the key length and value
         memcpy(&key_len, &header[2], 2);
-        memcpy(&val, &header[4], 8);
 
         // Abort if we haven't received the full key, wait for the data
         if (available_bytes(handle->conn) < BINARY_HEADER_SIZE + key_len)
@@ -374,11 +190,7 @@ static int handle_binary_client_connect(statsite_conn_handler *handle) {
             *(key + key_len - 1) = 0;
         }
 
-        // Add the sample
-        if (NULL != NULL)
-            metrics_add_sample(GLOBAL_METRICS, COUNTER, NULL, 1);
 
-        metrics_add_sample(GLOBAL_METRICS, type, key, val);
 
         // Make sure to free the command buffer if we need to
         if (should_free) free(key);

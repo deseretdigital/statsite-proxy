@@ -10,24 +10,20 @@
  */
 typedef struct {
     statsite_proxy_config *config;     // Global configuration
-    statsite_conn_info *conn;    // Opaque handle into the networking stack
-} statsite_conn_handler;
+    statsite_proxy_conn_info *conn;    // Opaque handle into the networking stack
+} statsite_proxy_conn_handler;
+
+typedef enum {
+    UNKNOWN,
+    KEY_VAL,
+    COUNTER,
+    TIMER
+} metric_type;
 
 /**
  * Invoked to initialize the conn handler layer.
  */
 void init_conn_handler(statsite_proxy_config *config);
-
-/**
- * Invoked to when we've reached the flush interval timeout
- */
-void flush_interval_trigger();
-
-/**
- * Called when statsite is terminating to flush the
- * final set of metrics
- */
-void final_flush();
 
 /**
  * Invoked by the networking layer when there is new
@@ -37,6 +33,6 @@ void final_flush();
  * @arg handle The connection related information
  * @return 0 on success.
  */
-int handle_client_connect(statsite_conn_handler *handle);
+int handle_client_connect(statsite_proxy_conn_handler *handle);
 
 #endif
