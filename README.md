@@ -1,5 +1,5 @@
-Statsite-Proxy
-==============
+Statsite-Proxy (Pre-alpha)
+==========================
 
 This is a proxy for statsite which is a stats aggregation server. 
 <https://github.com/armon/statsite>

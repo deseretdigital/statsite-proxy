@@ -1,0 +1,7 @@
+== TODO ==
+
+ * Add ketmama lib <https://github.com/RJ/ketama>
+ * Add hash-ring unit tests
+ * Build hash-ring component
+ * Add support for routing metrics to proxied servers
+ 
