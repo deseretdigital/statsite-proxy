@@ -24,8 +24,8 @@ statsite_libs = ["m", "pthread", murmur, inih]
 if platform.system() == 'Linux':
    statsite_libs.append("rt")
 
-statsite = env_statsite_with_err.Program('statsite', objs + ["src/statsite.c"], LIBS=statsite_libs)
-statsite_test = env_statsite_without_err.Program('test_runner', objs + Glob("tests/runner.c"), LIBS=statsite_libs + ["check"])
+statsite_proxy = env_statsite_with_err.Program('statsite_proxy', objs + ["src/statsite.c"], LIBS=statsite_libs)
+statsite_proxy_test = env_statsite_without_err.Program('test_runner', objs + Glob("tests/runner.c"), LIBS=statsite_libs + ["check"])
 
-# By default, only compile statsite
-Default(statsite)
+# By default, only compile statsite_proxy
+Default(statsite_proxy)

@@ -12,22 +12,18 @@
 #include "ini.h"
 
 /**
- * Default statsite_config values. Should create
+ * Default statsite_proxy_config values. Should create
  * filters that are about 300KB initially, and suited
  * to grow quickly.
  */
-static const statsite_config DEFAULT_CONFIG = {
-    8125,               // TCP defaults to 8125
-    8125,               // UDP on 8125
+static const statsite_proxy_config DEFAULT_CONFIG = {
+    8150,               // TCP defaults to 8125
+    8150,               // UDP on 8125
+    "servers.conf",     // default proxied servers file
     "DEBUG",            // DEBUG level
     LOG_DEBUG,
-    0.01,               // Default 1% error
-    "cat",              // Pipe to cat
-    10,                 // Flush every 10 seconds
     0,                  // Do not daemonize
-    "/var/run/statsite.pid", // Default pidfile path
-    0,                  // Do not use binary output by default
-    NULL,               // Do not track number of messages received
+    "/var/run/statsite_proxy.pid", // Default pidfile path
 };
 
 /**
@@ -67,24 +63,8 @@ static int value_to_int(const char *val, int *result) {
 }
 
 /**
- * Attempts to convert a string to a double,
- * and write the value out.
- * @arg val The string value
- * @arg result The destination for the result
- * @return 0 on success, -EINVAL on error.
- */
-static int value_to_double(const char *val, double *result) {
-    double res = strtod(val, NULL);
-    if (res == 0) {
-        return 0;
-    }
-    *result = res;
-    return 0;
-}
-
-/**
  * Callback function to use with INI-H.
- * @arg user Opaque user value. We use the statsite_config pointer
+ * @arg user Opaque user value. We use the statsite_proxy_config pointer
  * @arg section The INI seciton
  * @arg name The config name
  * @arg value The config value
@@ -92,12 +72,12 @@ static int value_to_double(const char *val, double *result) {
  */
 static int config_callback(void* user, const char* section, const char* name, const char* value) {
     // Ignore any non-statsite sections
-    if (strcasecmp("statsite", section) != 0) {
+    if (strcasecmp("statsite-proxy", section) != 0) {
         return 0;
     }
 
     // Cast the user handle
-    statsite_config *config = (statsite_config*)user;
+    statsite_proxy_config *config = (statsite_proxy_config*)user;
 
     // Switch on the config
     #define NAME_MATCH(param) (strcasecmp(param, name) == 0)
@@ -109,26 +89,15 @@ static int config_callback(void* user, const char* section, const char* name, co
         return value_to_int(value, &config->tcp_port);
     } else if (NAME_MATCH("udp_port")) {
         return value_to_int(value, &config->udp_port);
-    } else if (NAME_MATCH("flush_interval")) {
-         return value_to_int(value, &config->flush_interval);
     } else if (NAME_MATCH("daemonize")) {
         return value_to_bool(value, &config->daemonize);
-    } else if (NAME_MATCH("binary_stream")) {
-        return value_to_bool(value, &config->binary_stream);
-
-    // Handle the double cases
-    } else if (NAME_MATCH("timer_eps")) {
-        return value_to_double(value, &config->timer_eps);
-
     // Copy the string values
+    } else if (NAME_MATCH("servers")) {
+    	config->servers = strdup(value);
     } else if (NAME_MATCH("log_level")) {
         config->log_level = strdup(value);
-    } else if (NAME_MATCH("stream_cmd")) {
-        config->stream_cmd = strdup(value);
     } else if (NAME_MATCH("pid_file")) {
         config->pid_file = strdup(value);
-    } else if (NAME_MATCH("input_counter")) {
-        config->input_counter = strdup(value);
 
     // Unknown parameter?
     } else {
@@ -148,9 +117,9 @@ static int config_callback(void* user, const char* section, const char* name, co
  * @arg config Output. The config object to initialize.
  * @return 0 on success, negative on error.
  */
-int config_from_filename(char *filename, statsite_config *config) {
+int config_from_filename(char *filename, statsite_proxy_config *config) {
     // Initialize to the default values
-    memcpy(config, &DEFAULT_CONFIG, sizeof(statsite_config));
+    memcpy(config, &DEFAULT_CONFIG, sizeof(statsite_proxy_config));
 
     // If there is no filename, return now
     if (filename == NULL)
@@ -209,43 +178,15 @@ int sane_log_level(char *log_level, int *syslog_level) {
     return 0;
 }
 
-int sane_timer_eps(double eps) {
-    if (eps>= 0.5) {
-        syslog(LOG_ERR,
-               "Timer epsilon cannot be equal-to or greater than 0.5!");
-        return 1;
-    } else if (eps > 0.10) {
-        syslog(LOG_WARNING, "Timer epsilon very high!");
-    } else if (eps<= 0) {
-        syslog(LOG_ERR,
-               "Timer epsilon cannot less than or equal to 0!");
-        return 1;
-    }
-    return 0;
-}
-
-int sane_flush_interval(int intv) {
-    if (intv <= 0) {
-        syslog(LOG_ERR, "Flush interval cannot be negative!");
-        return 1;
-    } else if (intv >= 600)  {
-        syslog(LOG_WARNING,
-               "Flushing set to be very infrequent! Increased risk of data loss.");
-    }
-    return 0;
-}
-
 /**
  * Validates the configuration
  * @arg config The config object to validate.
  * @return 0 on success.
  */
-int validate_config(statsite_config *config) {
+int validate_config(statsite_proxy_config *config) {
     int res = 0;
 
     res |= sane_log_level(config->log_level, &config->syslog_log_level);
-    res |= sane_timer_eps(config->timer_eps);
-    res |= sane_flush_interval(config->flush_interval);
 
     return res;
 }

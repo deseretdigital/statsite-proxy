@@ -1,0 +1,10 @@
+[statsite-proxy]   
+port = 8150
+udp_port = 8150
+log_level = INFO
+servers = servers.conf
+daemonize = 0
+
+[servers]
+127.0.0.1:8125
+127.0.0.1:8225

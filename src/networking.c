@@ -132,7 +132,7 @@ typedef struct async_event async_event;
  */
 struct statsite_networking {
     volatile int should_run;  // Should the workers continue to run
-    statsite_config *config;
+    statsite_proxy_config *config;
 
     ev_io tcp_client;
     ev_io udp_client;
@@ -268,7 +268,7 @@ static int setup_udp_listener(statsite_networking *netconf) {
  * @arg mgr The filter manager to pass up to the connection handlers
  * @arg netconf Output. The configuration for the networking stack.
  */
-int init_networking(statsite_config *config, statsite_networking **netconf_out) {
+int init_networking(statsite_proxy_config *config, statsite_networking **netconf_out) {
     // Make the netconf structure
     statsite_networking *netconf = calloc(1, sizeof(struct statsite_networking));
 
@@ -315,7 +315,7 @@ int init_networking(statsite_config *config, statsite_networking **netconf_out) 
     ev_async_start(&netconf->loop_async);
 
     // Setup the timer
-    ev_timer_init(&netconf->flush_timer, handle_flush_event, config->flush_interval, config->flush_interval);
+    ev_timer_init(&netconf->flush_timer, handle_flush_event, 10, 10);
     ev_timer_start(&netconf->flush_timer);
 
     // Prepare the conn handlers

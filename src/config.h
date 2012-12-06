@@ -10,16 +10,12 @@
 typedef struct {
     int tcp_port;
     int udp_port;
+    char *servers;
     char *log_level;
     int syslog_log_level;
-    double timer_eps;
-    char *stream_cmd;
-    int flush_interval;
     bool daemonize;
     char *pid_file;
-    bool binary_stream;
-    char *input_counter;
-} statsite_config;
+} statsite_proxy_config;
 
 /**
  * Initializes the configuration from a filename.
@@ -29,14 +25,14 @@ typedef struct {
  * @arg config Output. The config object to initialize.
  * @return 0 on success, negative on error.
  */
-int config_from_filename(char *filename, statsite_config *config);
+int config_from_filename(char *filename, statsite_proxy_config *config);
 
 /**
  * Validates the configuration
  * @arg config The config object to validate.
  * @return 0 on success, negative on error.
  */
-int validate_config(statsite_config *config);
+int validate_config(statsite_proxy_config *config);
 
 // Configuration validation methods
 int sane_log_level(char *log_level, int *syslog_level);

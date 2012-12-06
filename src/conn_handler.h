@@ -9,14 +9,14 @@
  * networking layer.
  */
 typedef struct {
-    statsite_config *config;     // Global configuration
+    statsite_proxy_config *config;     // Global configuration
     statsite_conn_info *conn;    // Opaque handle into the networking stack
 } statsite_conn_handler;
 
 /**
  * Invoked to initialize the conn handler layer.
  */
-void init_conn_handler(statsite_config *config);
+void init_conn_handler(statsite_proxy_config *config);
 
 /**
  * Invoked to when we've reached the flush interval timeout

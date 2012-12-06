@@ -11,7 +11,7 @@ typedef struct conn_info statsite_conn_info;
  * @arg config Takes the statsite server configuration
  * @arg netconf Output. The configuration for the networking stack.
  */
-int init_networking(statsite_config *config, statsite_networking **netconf_out);
+int init_networking(statsite_proxy_config *config, statsite_networking **netconf_out);
 
 /**
  * Entry point for threads to join the networking

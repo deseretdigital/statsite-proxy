@@ -14,7 +14,7 @@ int main(void)
 {
     setlogmask(LOG_UPTO(LOG_DEBUG));
 
-    Suite *s1 = suite_create("Statsite");
+    Suite *s1 = suite_create("Statsite Proxy");
     TCase *tc1 = tcase_create("hashmap");
     TCase *tc2 = tcase_create("quantile");
     TCase *tc3 = tcase_create("heap");
@@ -27,6 +27,7 @@ int main(void)
     int nf;
 
     // Add the hashmap tests
+    /*
     suite_add_tcase(s1, tc1);
     tcase_add_test(tc1, test_map_init_and_destroy);
     tcase_add_test(tc1, test_map_get_no_keys);
@@ -91,6 +92,7 @@ int main(void)
     tcase_add_test(tc7, test_stream_some);
     tcase_add_test(tc7, test_stream_bad_cmd);
     tcase_add_test(tc7, test_stream_sigpipe);
+*/
 
     // Add the config tests
     suite_add_tcase(s1, tc8);
@@ -103,8 +105,7 @@ int main(void)
     tcase_add_test(tc8, test_join_path_no_slash);
     tcase_add_test(tc8, test_join_path_with_slash);
     tcase_add_test(tc8, test_sane_log_level);
-    tcase_add_test(tc8, test_sane_timer_eps);
-    tcase_add_test(tc8, test_sane_flush_interval);
+
 
     srunner_run_all(sr, CK_ENV);
     nf = srunner_ntests_failed(sr);

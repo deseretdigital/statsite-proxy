@@ -46,15 +46,15 @@ static int BINARY_HEADER_SIZE = 12;
  * This is the current metrics object we are using
  */
 static metrics *GLOBAL_METRICS;
-static statsite_config *GLOBAL_CONFIG;
+static statsite_proxy_config *GLOBAL_CONFIG;
 
 /**
  * Invoked to initialize the conn handler layer.
  */
-void init_conn_handler(statsite_config *config) {
+void init_conn_handler(statsite_proxy_config *config) {
     // Make the initial metrics object
     metrics *m = malloc(sizeof(metrics));
-    int res = init_metrics(config->timer_eps, (double*)&QUANTILES, NUM_QUANTILES, m);
+    int res = init_metrics(0.01, (double*)&QUANTILES, NUM_QUANTILES, m);
     assert(res == 0);
     GLOBAL_METRICS = m;
 
@@ -165,10 +165,10 @@ static void* flush_thread(void *arg) {
     gettimeofday(&tv, NULL);
 
     // Determine which callback to use
-    stream_callback cb = (GLOBAL_CONFIG->binary_stream)? stream_formatter_bin: stream_formatter;
+    stream_callback cb = (0)? stream_formatter_bin: stream_formatter;
 
     // Stream the records
-    int res = stream_to_command(m, &tv, cb, GLOBAL_CONFIG->stream_cmd);
+    int res = stream_to_command(m, &tv, cb, "cat");
     if (res != 0) {
         syslog(LOG_WARNING, "Streaming command exited with status %d", res);
     }
@@ -287,8 +287,8 @@ static int handle_ascii_client_connect(statsite_conn_handler *handle) {
 
             // Store the sample if we did the conversion
             if (val != 0 || endptr != val_str) {
-                if (GLOBAL_CONFIG->input_counter != NULL)
-                    metrics_add_sample(GLOBAL_METRICS, COUNTER, GLOBAL_CONFIG->input_counter, 1);
+                if (NULL != NULL)
+                    metrics_add_sample(GLOBAL_METRICS, COUNTER, NULL, 1);
 
                 metrics_add_sample(GLOBAL_METRICS, type, buf, val);
             } else {
@@ -375,8 +375,8 @@ static int handle_binary_client_connect(statsite_conn_handler *handle) {
         }
 
         // Add the sample
-        if (GLOBAL_CONFIG->input_counter != NULL)
-            metrics_add_sample(GLOBAL_METRICS, COUNTER, GLOBAL_CONFIG->input_counter, 1);
+        if (NULL != NULL)
+            metrics_add_sample(GLOBAL_METRICS, COUNTER, NULL, 1);
 
         metrics_add_sample(GLOBAL_METRICS, type, key, val);
 

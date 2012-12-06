@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
     if (parse_res) return 1;
 
     // Parse the config file
-    statsite_config *config = calloc(1, sizeof(statsite_config));
+    statsite_proxy_config *config = calloc(1, sizeof(statsite_proxy_config));
     int config_res = config_from_filename(config_file, config);
     if (config_res != 0) {
         syslog(LOG_ERR, "Failed to read the configuration file!");
