@@ -1,0 +1,12 @@
+Makefile 
+    updated to allow compiling and testing and run without
+    installing a shared object. 
+
+README 
+    removed binding info for php, python, java and Erlang
+
+ketema.servers
+    moved into lib directory for self contained testing
+    
+Original Repository 
+https://github.com/RJ/ketama
