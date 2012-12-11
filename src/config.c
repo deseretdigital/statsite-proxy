@@ -17,12 +17,12 @@
  * to grow quickly.
  */
 static const statsite_proxy_config DEFAULT_CONFIG = {
-    8150,               // TCP defaults to 8125
-    8150,               // UDP on 8125
-    "servers.conf",     // default proxied servers file
-    "DEBUG",            // DEBUG level
+    8150,                  // TCP defaults to 8125
+    8150,                  // UDP on 8125
+    "config/servers.conf", // default proxied servers file
+    "DEBUG",               // DEBUG level
     LOG_DEBUG,
-    0,                  // Do not daemonize
+    0,                     // Do not daemonize
     "/var/run/statsite_proxy.pid", // Default pidfile path
 };
 

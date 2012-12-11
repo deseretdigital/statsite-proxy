@@ -134,6 +134,8 @@ struct statsite_proxy_networking {
     volatile int should_run;  // Should the workers continue to run
     statsite_proxy_config *config;
 
+    ketama_continuum hashring;
+
     ev_io tcp_client;
     ev_io udp_client;
 
@@ -263,17 +265,18 @@ static int setup_udp_listener(statsite_proxy_networking *netconf) {
 
 /**
  * Initializes the networking interfaces
- * @arg config Takes the bloom server configuration
- * @arg mgr The filter manager to pass up to the connection handlers
+ * @arg config Takes the statsite_proxy server configuration
  * @arg netconf Output. The configuration for the networking stack.
+ * @arg hashring Ketama continuum for routing metrics via consistent hashing
  */
-int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out) {
+int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out, ketama_continuum hashring) {
     // Make the netconf structure
     statsite_proxy_networking *netconf = calloc(1, sizeof(struct statsite_proxy_networking));
 
     // Initialize
     netconf->events = NULL;
     netconf->config = config;
+    netconf->hashring = hashring;
     netconf->should_run = 1;
     netconf->thread = NULL;
 

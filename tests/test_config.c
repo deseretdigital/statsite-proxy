@@ -15,7 +15,7 @@ START_TEST(test_config_get_default)
     fail_unless(res == 0);
     fail_unless(config.tcp_port == 8150);
     fail_unless(config.udp_port == 8150);
-    fail_unless(strcmp(config.servers, "servers.conf") == 0);
+    fail_unless(strcmp(config.servers, "config/servers.conf") == 0);
     fail_unless(strcmp(config.log_level, "DEBUG") == 0);
     fail_unless(config.syslog_log_level == LOG_DEBUG);
     fail_unless(config.daemonize == false);
@@ -32,7 +32,7 @@ START_TEST(test_config_bad_file)
     // Should get the defaults...
     fail_unless(config.tcp_port == 8150);
 	fail_unless(config.udp_port == 8150);
-	fail_unless(strcmp(config.servers, "servers.conf") == 0);
+	fail_unless(strcmp(config.servers, "config/servers.conf") == 0);
 	fail_unless(strcmp(config.log_level, "DEBUG") == 0);
 	fail_unless(config.syslog_log_level == LOG_DEBUG);
 	fail_unless(config.daemonize == false);
@@ -53,7 +53,7 @@ START_TEST(test_config_empty_file)
     // Should get the defaults...
     fail_unless(config.tcp_port == 8150);
 	fail_unless(config.udp_port == 8150);
-	fail_unless(strcmp(config.servers, "servers.conf") == 0);
+	fail_unless(strcmp(config.servers, "config/servers.conf") == 0);
 	fail_unless(strcmp(config.log_level, "DEBUG") == 0);
 	fail_unless(config.syslog_log_level == LOG_DEBUG);
 	fail_unless(config.daemonize == false);

@@ -18,6 +18,7 @@
 #include "config.h"
 #include "conn_handler.h"
 #include "networking.h"
+#include "ketama.h"
 
 /**
  * By default we should run. Our signal
@@ -184,9 +185,17 @@ int main(int argc, char **argv) {
     // Log that we are starting up
     syslog(LOG_INFO, "Starting statsite-proxy.");
 
+    // Initialize continuum
+    ketama_continuum hashring;
+    int hashring_res = ketama_roll( &hashring, config->servers);
+    if (hashring_res == 0) {
+    	syslog(LOG_ERR, "%s", ketama_error());
+    	return 1;
+    }
+
     // Initialize the networking
     statsite_proxy_networking *netconf = NULL;
-    int net_res = init_networking(config, &netconf);
+    int net_res = init_networking(config, &netconf, hashring);
     if (net_res != 0) {
         syslog(LOG_ERR, "Failed to initialize networking!");
         return 1;

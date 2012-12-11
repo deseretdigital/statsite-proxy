@@ -6,9 +6,9 @@
  *
  */
 
-#include <ketama.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "ketama.h"
 
 int main(int argc, char **argv)
 {
