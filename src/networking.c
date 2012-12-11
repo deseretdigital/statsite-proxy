@@ -624,7 +624,7 @@ static void invoke_event_handler(worker_ev_userdata* data) {
     if (watcher == &data->netconf->udp_client) {
         // Read the message and process
         if (!handle_udp_message(watcher, data)) {
-            statsite_proxy_conn_handler handle = {data->netconf->config, watcher->data};
+            statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->hashring, watcher->data};
             handle_client_connect(&handle);
         }
 
@@ -643,7 +643,7 @@ static void invoke_event_handler(worker_ev_userdata* data) {
     incref_client_connection(conn);
 
     if (!handle_client_data(watcher, data)) {
-        statsite_proxy_conn_handler handle = {data->netconf->config, watcher->data};
+        statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->hashring, watcher->data};
         handle_client_connect(&handle);
     }
 

@@ -20,6 +20,8 @@
 #include "networking.h"
 #include "ketama.h"
 
+//#define DEBUG
+
 /**
  * By default we should run. Our signal
  * handler updates this variable to allow the
@@ -192,6 +194,11 @@ int main(int argc, char **argv) {
     	syslog(LOG_ERR, "%s", ketama_error());
     	return 1;
     }
+
+#ifdef DEBUG
+    ketama_print_continuum(hashring);
+#endif
+
 
     // Initialize the networking
     statsite_proxy_networking *netconf = NULL;

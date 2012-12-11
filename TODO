@@ -1,5 +1,5 @@
 == TODO ==
 
- * Add hash-ring unit tests
- * Add support for routing metrics to proxied servers
+ * Add hashring unit tests
+ * Forward metrics to proxied servers
  
