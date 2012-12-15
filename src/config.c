@@ -71,7 +71,7 @@ static int value_to_int(const char *val, int *result) {
  * @return 1 on success.
  */
 static int config_callback(void* user, const char* section, const char* name, const char* value) {
-    // Ignore any non-statsite sections
+    // Ignore any non-statsite-proxy sections
     if (strcasecmp("statsite-proxy", section) != 0) {
         return 0;
     }

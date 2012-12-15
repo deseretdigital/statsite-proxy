@@ -7,7 +7,7 @@ envinih = Environment(CPATH = ['deps/inih/'], CFLAGS="-O3")
 inih = envinih.Library('inih', Glob("deps/inih/*.c"))
 
 envketama = Environment(CPATH = ['deps/libketama/'], CFLAGS="-O3")
-ketama = envketama.Library('ketama', Glob("deps/libketama/*.c")) 
+ketama = envketama.Library('ketama', Glob("deps/libketama/md5.c") + Glob("deps/libketama/ketama.c")) 
 
 env_statsite_with_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE -Wall -Werror -O3 -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')
 env_statsite_without_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE -O3 -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')

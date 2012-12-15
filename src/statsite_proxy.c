@@ -1,5 +1,5 @@
 /**
- * This is the main entry point into statsite.
+ * This is the main entry point into statsite-proxy.
  * We are responsible for parsing any commmand line
  * flags, reading the configuration, starting
  * the filter manager, and finally starting the
@@ -19,6 +19,7 @@
 #include "conn_handler.h"
 #include "networking.h"
 #include "ketama.h"
+#include "hashmap.h"
 
 //#define DEBUG
 
@@ -189,7 +190,9 @@ int main(int argc, char **argv) {
 
     // Initialize continuum
     ketama_continuum hashring;
-    int hashring_res = ketama_roll( &hashring, config->servers);
+    ketama_serverinfo serverinfo;
+
+    int hashring_res = ketama_roll( &hashring, config->servers, &serverinfo);
     if (hashring_res == 0) {
     	syslog(LOG_ERR, "%s", ketama_error());
     	return 1;
@@ -198,6 +201,18 @@ int main(int argc, char **argv) {
 #ifdef DEBUG
     ketama_print_continuum(hashring);
 #endif
+
+    // Set up hashmap for backend server connections
+    hashmap *map;
+    int hashmap_res = hashmap_init(0, &map);
+    if (hashmap_res == 0) {
+		syslog(LOG_ERR, "Failed to initialize hashmap.");
+		return 1;
+	}
+
+    for (int i=0; i<serverinfo.numservers; i++) {
+    	printf("%s\n", serverinfo.serverinfo[i].addr);
+    }
 
 
     // Initialize the networking
@@ -233,7 +248,10 @@ int main(int argc, char **argv) {
     }
 
     // Free our memory
+    free(serverinfo.serverinfo);
+    ketama_smoke(hashring);
     free(config);
+
 
     // Done
     return 0;

@@ -9,7 +9,7 @@ typedef struct conn_info statsite_proxy_conn_info;
 
 /**
  * Initializes the networking interfaces
- * @arg config Takes the statsite server configuration
+ * @arg config Takes the statsite-proxy server configuration
  * @arg netconf Output. The configuration for the networking stack.
  * @arg hashring Ketama continuum for routing metrics via consistent hashing
  */
