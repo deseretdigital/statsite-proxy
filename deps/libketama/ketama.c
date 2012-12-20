@@ -55,6 +55,7 @@ int *sem_ids = NULL;
 int *shm_ids = NULL;
 int **shm_data = NULL;
 
+
 static void
 init_sem_id_tracker() {
     sem_ids = malloc(sizeof(int)*1024);
@@ -369,15 +370,14 @@ ketama_get_server( char* key, ketama_continuum cont )
     }
 }
 
-
 /** \brief Generates the continuum of servers (each server as many points on a circle).
   * \param key Shared memory key for storing the newly created continuum.
   * \param filename Server definition file, which will be parsed to create this continuum.
   * \return 0 on failure, 1 on success. */
 static int
-ketama_create_continuum( key_t key, char* filename )
+ketama_create_continuum( key_t key, char* filename, ketama_serverinfo* serversptr )
 {
-    if (shm_ids == NULL) {
+	if (shm_ids == NULL) {
         init_shm_id_tracker();
     }
 
@@ -394,6 +394,7 @@ ketama_create_continuum( key_t key, char* filename )
     slist = read_server_definitions( filename, &numservers, &memory );
     /* Check numservers first; if it is zero then there is no error message
      * and we need to set one. */
+
     if ( numservers < 1 )
     {
         sprintf( k_error, "No valid server definitions in file %s", filename );
@@ -448,7 +449,10 @@ ketama_create_continuum( key_t key, char* filename )
             }
         }
     }
-    free( slist );
+
+    // Pass back server info
+    serversptr->numservers = numservers;
+    serversptr->serverinfo = slist;
 
     /* Sorts in ascending order of "point" */
     qsort( (void*) &continuum, cont, sizeof( mcs ), (compfn)ketama_compare );
@@ -484,9 +488,10 @@ ketama_create_continuum( key_t key, char* filename )
 
 
 int
-ketama_roll( ketama_continuum* contptr, char* filename )
+ketama_roll( ketama_continuum* contptr, char* filename, ketama_serverinfo* serversptr )
 {
-    if (shm_ids == NULL) {
+
+	if (shm_ids == NULL) {
         init_shm_id_tracker();
     }
 
@@ -551,7 +556,7 @@ ketama_roll( ketama_continuum* contptr, char* filename )
 //          else
 //              syslog( LOG_INFO, "Server definitions changed, reloading...\n" );
 
-            if ( !ketama_create_continuum( key, filename ) )
+            if ( !ketama_create_continuum( key, filename, serversptr ) )
             {
 //                 strcpy( k_error, "Ketama_create_continuum() failed!" );
                 ketama_sem_unlock( sem_set_id );

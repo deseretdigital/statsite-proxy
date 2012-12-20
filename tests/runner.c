@@ -15,7 +15,6 @@ int main(void)
     int nf;
 
     // Add the hashmap tests
-    /*
     suite_add_tcase(s1, tc1);
     tcase_add_test(tc1, test_map_init_and_destroy);
     tcase_add_test(tc1, test_map_get_no_keys);
@@ -45,7 +44,7 @@ int main(void)
     tcase_add_test(tc7, test_stream_some);
     tcase_add_test(tc7, test_stream_bad_cmd);
     tcase_add_test(tc7, test_stream_sigpipe);
-*/
+
 
     // Add the config tests
     suite_add_tcase(s1, tc8);

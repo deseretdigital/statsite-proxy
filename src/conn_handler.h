@@ -2,7 +2,7 @@
 #define CONN_HANDLER_H
 #include "config.h"
 #include "networking.h"
-#include "ketama.h"
+#include "hashring.h"
 
 /**
  * This structure is used to communicate
@@ -11,7 +11,7 @@
  */
 typedef struct {
     statsite_proxy_config *config;     // Global configuration
-    ketama_continuum hashring;         // Global hashring
+    hashring *hashring;                // Global hashring
     statsite_proxy_conn_info *conn;    // Opaque handle into the networking stack
 } statsite_proxy_conn_handler;
 

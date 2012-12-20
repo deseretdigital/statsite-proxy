@@ -1,5 +1,5 @@
 /**
- * This is the main entry point into statsite.
+ * This is the main entry point into statsite-proxy.
  * We are responsible for parsing any commmand line
  * flags, reading the configuration, starting
  * the filter manager, and finally starting the
@@ -18,7 +18,8 @@
 #include "config.h"
 #include "conn_handler.h"
 #include "networking.h"
-#include "ketama.h"
+#include "hashring.h"
+#include "hashmap.h"
 
 //#define DEBUG
 
@@ -186,19 +187,16 @@ int main(int argc, char **argv) {
 
     // Log that we are starting up
     syslog(LOG_INFO, "Starting statsite-proxy.");
+    syslog(LOG_INFO, "Loaded Servers config: %s", config->servers);
 
-    // Initialize continuum
-    ketama_continuum hashring;
-    int hashring_res = ketama_roll( &hashring, config->servers);
-    if (hashring_res == 0) {
-    	syslog(LOG_ERR, "%s", ketama_error());
+    // Initialize hashring
+    hashring *hashring = NULL;
+    int hashring_res = hashring_init(&hashring, config->servers);
+
+    if (hashring_res == 1) {
+    	syslog(LOG_ERR, "%s", hashring_error());
     	return 1;
     }
-
-#ifdef DEBUG
-    ketama_print_continuum(hashring);
-#endif
-
 
     // Initialize the networking
     statsite_proxy_networking *netconf = NULL;
@@ -216,6 +214,7 @@ int main(int argc, char **argv) {
      * Loop forever, until we get a signal that
      * indicates we should shutdown.
      */
+
     signal(SIGPIPE, SIG_IGN);       // Ignore SIG_IGN
     signal(SIGHUP, SIG_IGN);        // Ignore SIG_IGN
     signal(SIGINT, signal_handler);
@@ -228,12 +227,15 @@ int main(int argc, char **argv) {
     shutdown_networking(netconf);
 
     // If daemonized, remove the pid file
+
     if (config->daemonize && unlink(config->pid_file)) {
         syslog(LOG_ERR, "Failed to delete pid file!");
     }
 
     // Free our memory
+    hashring_destroy(hashring);
     free(config);
+
 
     // Done
     return 0;
