@@ -18,7 +18,7 @@
 #include "config.h"
 #include "conn_handler.h"
 #include "networking.h"
-#include "ketama.h"
+#include "hashring.h"
 #include "hashmap.h"
 
 //#define DEBUG
@@ -187,33 +187,16 @@ int main(int argc, char **argv) {
 
     // Log that we are starting up
     syslog(LOG_INFO, "Starting statsite-proxy.");
+    syslog(LOG_INFO, "Loaded Servers config: %s", config->servers);
 
-    // Initialize continuum
-    ketama_continuum hashring;
-    ketama_serverinfo serverinfo;
+    // Initialize hashring
+    hashring *hashring = NULL;
+    int hashring_res = hashring_init(&hashring, config->servers);
 
-    int hashring_res = ketama_roll( &hashring, config->servers, &serverinfo);
-    if (hashring_res == 0) {
-    	syslog(LOG_ERR, "%s", ketama_error());
+    if (hashring_res == 1) {
+    	syslog(LOG_ERR, "%s", hashring_error());
     	return 1;
     }
-
-#ifdef DEBUG
-    ketama_print_continuum(hashring);
-#endif
-
-    // Set up hashmap for backend server connections
-    hashmap *map;
-    int hashmap_res = hashmap_init(0, &map);
-    if (hashmap_res == 0) {
-		syslog(LOG_ERR, "Failed to initialize hashmap.");
-		return 1;
-	}
-
-    for (int i=0; i<serverinfo.numservers; i++) {
-    	printf("%s\n", serverinfo.serverinfo[i].addr);
-    }
-
 
     // Initialize the networking
     statsite_proxy_networking *netconf = NULL;
@@ -231,6 +214,7 @@ int main(int argc, char **argv) {
      * Loop forever, until we get a signal that
      * indicates we should shutdown.
      */
+
     signal(SIGPIPE, SIG_IGN);       // Ignore SIG_IGN
     signal(SIGHUP, SIG_IGN);        // Ignore SIG_IGN
     signal(SIGINT, signal_handler);
@@ -243,13 +227,13 @@ int main(int argc, char **argv) {
     shutdown_networking(netconf);
 
     // If daemonized, remove the pid file
+
     if (config->daemonize && unlink(config->pid_file)) {
         syslog(LOG_ERR, "Failed to delete pid file!");
     }
 
     // Free our memory
-    free(serverinfo.serverinfo);
-    ketama_smoke(hashring);
+    hashring_destroy(hashring);
     free(config);
 
 

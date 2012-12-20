@@ -104,8 +104,9 @@ static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
             }
 
             // Apply consistent hashing
-            mcs* server = ketama_get_server(buf, handle->hashring);
+            char* server = hashring_getserver(handle->hashring, buf);
 
+            printf("Recieved: %s -> %s\n", buf, server);
 
             // Forward metric
 
@@ -189,7 +190,7 @@ static int handle_binary_client_connect(statsite_proxy_conn_handler *handle) {
         }
 
         // Apply consistent hashing
-        mcs* server = ketama_get_server(key, handle->hashring);
+        char* server = hashring_getserver(handle->hashring, key);
 
 
         // Make sure to free the command buffer if we need to

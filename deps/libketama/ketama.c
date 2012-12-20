@@ -394,6 +394,7 @@ ketama_create_continuum( key_t key, char* filename, ketama_serverinfo* serverspt
     slist = read_server_definitions( filename, &numservers, &memory );
     /* Check numservers first; if it is zero then there is no error message
      * and we need to set one. */
+
     if ( numservers < 1 )
     {
         sprintf( k_error, "No valid server definitions in file %s", filename );
@@ -489,6 +490,7 @@ ketama_create_continuum( key_t key, char* filename, ketama_serverinfo* serverspt
 int
 ketama_roll( ketama_continuum* contptr, char* filename, ketama_serverinfo* serversptr )
 {
+
 	if (shm_ids == NULL) {
         init_shm_id_tracker();
     }

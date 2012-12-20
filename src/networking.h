@@ -1,7 +1,7 @@
 #ifndef NETWORKING_H
 #define NETWORKING_H
 #include "config.h"
-#include "ketama.h"
+#include "hashring.h"
 
 // Network configuration struct
 typedef struct statsite_proxy_networking statsite_proxy_networking;
@@ -11,9 +11,9 @@ typedef struct conn_info statsite_proxy_conn_info;
  * Initializes the networking interfaces
  * @arg config Takes the statsite-proxy server configuration
  * @arg netconf Output. The configuration for the networking stack.
- * @arg hashring Ketama continuum for routing metrics via consistent hashing
+ * @arg hashring Pointer to hashring for routing metrics via consistent hashing
  */
-int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out, ketama_continuum hashring);
+int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out, hashring *hashringptr);
 
 /**
  * Entry point for threads to join the networking
