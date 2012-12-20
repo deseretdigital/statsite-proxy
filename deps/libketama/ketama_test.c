@@ -18,7 +18,8 @@ int main(int argc, char **argv)
   }
 
   ketama_continuum c;
-  ketama_roll( &c, *++argv );
+  serverinfo* serverinfo;
+  ketama_roll( &c, *++argv, serverinfo );
 
   printf( "%s\n", ketama_error() );
 

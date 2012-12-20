@@ -62,6 +62,12 @@ typedef struct
 
 typedef struct
 {
+	unsigned int numservers;
+	serverinfo* serverinfo;
+} ketama_serverinfo;
+
+typedef struct
+{
     int numpoints;
     void* modtime;
     void* array; //array of mcs structs
@@ -69,12 +75,12 @@ typedef struct
 
 typedef continuum* ketama_continuum;
 
-
 /** \brief Get a continuum struct that contains a reference to the server list.
   * \param contptr The value of this pointer will contain the retrieved continuum.
   * \param filename The server-definition file which defines our continuum.
+  * \param serversptr The value of this pointer will contain the parsed server list.
   * \return 0 on failure, 1 on success. */
-int ketama_roll( ketama_continuum* contptr, char* filename );
+int ketama_roll( ketama_continuum* contptr, char* filename, ketama_serverinfo* serversptr );
 
 /** \brief Frees any allocated memory.
   * \param contptr The continuum that you want to be destroy. */
@@ -107,7 +113,7 @@ unsigned int ketama_hashi( char* inString );
 void ketama_md5_digest( char* inString, unsigned char md5pword[16] );
 
 /** \brief Error method for error checking.
-  * \return The latest error that occured. */
+  * \return The latest error that occurred. */
 char* ketama_error();
 
 #ifdef __cplusplus /* If this is a C++ compiler, end C linkage */

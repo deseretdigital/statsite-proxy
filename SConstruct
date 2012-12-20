@@ -1,18 +1,21 @@
 import platform
 
-envmurmur = Environment(CPPPATH = ['deps/murmurhash/'], CPPFLAGS="-fno-exceptions -O3")
+optimize = '-O'
+
+envmurmur = Environment(CPPPATH = ['deps/murmurhash/'], CPPFLAGS="-fno-exceptions " + optimize)
 murmur = envmurmur.Library('murmur', Glob("deps/murmurhash/*.cpp"))
 
-envinih = Environment(CPATH = ['deps/inih/'], CFLAGS="-O3")
+envinih = Environment(CPATH = ['deps/inih/'], CFLAGS=optimize)
 inih = envinih.Library('inih', Glob("deps/inih/*.c"))
 
-envketama = Environment(CPATH = ['deps/libketama/'], CFLAGS="-O3")
-ketama = envketama.Library('ketama', Glob("deps/libketama/*.c")) 
+envketama = Environment(CPATH = ['deps/libketama/'], CFLAGS=optimize)
+ketama = envketama.Library('ketama', Glob("deps/libketama/md5.c") + Glob("deps/libketama/ketama.c")) 
 
-env_statsite_with_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE -Wall -Werror -O3 -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')
-env_statsite_without_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE -O3 -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')
+env_statsite_with_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE -Wall -Werror ' + optimize + ' -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')
+env_statsite_without_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE ' + optimize + ' -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')
 
-objs = env_statsite_with_err.Object('src/hashmap', 'src/hashmap.c')           + \
+objs = env_statsite_with_err.Object('src/hashring', 'src/hashring.c')         + \
+        env_statsite_with_err.Object('src/hashmap', 'src/hashmap.c')          + \
         env_statsite_with_err.Object('src/heap', 'src/heap.c')                + \
         env_statsite_with_err.Object('src/config', 'src/config.c')            + \
         env_statsite_without_err.Object('src/networking', 'src/networking.c') + \
