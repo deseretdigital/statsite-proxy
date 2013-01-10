@@ -1,19 +1,25 @@
 #ifndef NETWORKING_H
 #define NETWORKING_H
 #include "config.h"
-#include "hashring.h"
+#include "proxy.h"
 
 // Network configuration struct
 typedef struct statsite_proxy_networking statsite_proxy_networking;
 typedef struct conn_info statsite_proxy_conn_info;
 
+// Message type
+typedef enum {
+    TCP,
+    UDP,
+} PROXY_MSG_TYPE;
+
 /**
  * Initializes the networking interfaces
  * @arg config Takes the statsite-proxy server configuration
  * @arg netconf Output. The configuration for the networking stack.
- * @arg hashring Pointer to hashring for routing metrics via consistent hashing
+ * @arg proxy Pointer to proxy for routing metrics via consistent hashing
  */
-int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out, hashring *hashringptr);
+int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out, proxy *proxy);
 
 /**
  * Entry point for threads to join the networking
@@ -41,14 +47,19 @@ int shutdown_networking(statsite_proxy_networking *netconf);
 void close_client_connection(statsite_proxy_conn_info *conn);
 
 /**
+ * Closes the client connection.
+ */
+void close_proxy_connection(statsite_proxy_conn_info *conn);
+
+/**
  * Sends a response to a client.
- * @arg conn The client connection
- * @arg response_buffers A list of response buffers to send
- * @arg buf_sizes A list of the buffer sizes
- * @arg num_bufs The number of response buffers
+ * @arg connptr The client connection
+ * @arg msg_buffer A list of response buffers to send
+ * @arg buf_size A list of the buffer sizes
+ * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-int send_client_response(statsite_proxy_conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs);
+int send_proxy_msg(void *connptr, char *msg_buffer, int buf_size, PROXY_MSG_TYPE msg_type);
 
 /**
  * This method is used to conveniently extract commands from the

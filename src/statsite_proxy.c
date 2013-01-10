@@ -16,10 +16,9 @@
 #include <unistd.h>
 #include <signal.h>
 #include "config.h"
+#include "proxy.h"
 #include "conn_handler.h"
 #include "networking.h"
-#include "hashring.h"
-#include "hashmap.h"
 
 //#define DEBUG
 
@@ -189,18 +188,18 @@ int main(int argc, char **argv) {
     syslog(LOG_INFO, "Starting statsite-proxy.");
     syslog(LOG_INFO, "Loaded Servers config: %s", config->servers);
 
-    // Initialize hashring
-    hashring *hashring = NULL;
-    int hashring_res = hashring_init(&hashring, config->servers);
+    // Initialize proxy
+    proxy *proxy = NULL;
+    int proxy_res = proxy_init(&proxy, config->servers);
 
-    if (hashring_res == 1) {
-    	syslog(LOG_ERR, "%s", hashring_error());
+    if (proxy_res != 0) {
+    	syslog(LOG_ERR, "Failed to initialize proxy!");
     	return 1;
     }
 
     // Initialize the networking
     statsite_proxy_networking *netconf = NULL;
-    int net_res = init_networking(config, &netconf, hashring);
+    int net_res = init_networking(config, &netconf, proxy);
     if (net_res != 0) {
         syslog(LOG_ERR, "Failed to initialize networking!");
         return 1;
@@ -233,8 +232,9 @@ int main(int argc, char **argv) {
     }
 
     // Free our memory
-    hashring_destroy(hashring);
+    proxy_destroy(proxy);
     free(config);
+
 
 
     // Done

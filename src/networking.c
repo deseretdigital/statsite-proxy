@@ -23,6 +23,8 @@
 #include <syslog.h>
 #include <unistd.h>
 #include "conn_handler.h"
+#include "hashring.h"
+#include "ketama.h"
 
 
 /**
@@ -47,7 +49,6 @@
  * 32K -> 256K -> 2MB -> 16MB
  */
 #define CONN_BUF_MULTIPLIER 8
-
 
 /**
  * Stores the thread specific user data.
@@ -102,6 +103,16 @@ struct conn_info {
 };
 typedef struct conn_info conn_info;
 
+/**
+ * Wrapper for TCP and UDP conn_info
+ */
+typedef struct {
+	int tcp_fd;
+	conn_info *tcp;
+	int udp_fd;
+	conn_info *udp;
+} proxy_conn_info;
+
 
 /**
  * Represents the various types
@@ -134,15 +145,13 @@ struct statsite_proxy_networking {
     volatile int should_run;  // Should the workers continue to run
     statsite_proxy_config *config;
 
-    hashring *hashring;
+    proxy *proxy;
 
     ev_io tcp_client;
     ev_io udp_client;
 
     ev_async loop_async;            // Allows async interrupts
     volatile async_event *events;   // List of pending events
-
-    ev_timer flush_timer;
 
     pthread_t thread;       // Thread references
 };
@@ -162,12 +171,23 @@ static void invoke_event_handler(worker_ev_userdata* data);
 // Utility methods
 static int set_client_sockopts(int client_fd);
 static conn_info* get_conn(statsite_proxy_networking *netconf);
-static int send_client_response_buffered(conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs);
-static int send_client_response_direct(conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs);
+
+static proxy_conn_info* get_proxy_conn(statsite_proxy_networking *netconf);
+
+static int send_proxy_msg_buffered(conn_info *conn, char *msg_buffer, int buf_size);
+static int send_proxy_msg_direct(conn_info *conn, char *msg_buffer, int buf_size);
+
+static int send_proxy_msg_udp(conn_info *conn, char *msg_buffer, int buf_size);
 
 static void incref_client_connection(conn_info *conn);
 static void decref_client_connection(conn_info *conn);
+
+static void incref_proxy_connection(conn_info *conn);
+static void decref_proxy_connection(conn_info *conn);
+
 static void private_close_connection(conn_info *conn);
+
+static int parse_ip(struct sockaddr_in *socket_addr, char *addr_buf);
 
 // Circular buffer method
 static void circbuf_init(circular_buffer *buf);
@@ -181,6 +201,89 @@ static void circbuf_setup_writev_iovec(circular_buffer *buf, struct iovec *vecto
 static void circbuf_advance_write(circular_buffer *buf, uint64_t bytes);
 static void circbuf_advance_read(circular_buffer *buf, uint64_t bytes);
 static int circbuf_write(circular_buffer *buf, char *in, uint64_t bytes);
+
+/**
+ * Invoked when a TCP listening socket fd is ready
+ * to accept a new client. Accepts the client, initializes
+ * the connection buffers, and prepares to start listening
+ * for client data
+ */
+static int setup_proxy_connections(statsite_proxy_networking *netconf) {
+
+	proxy* proxy = netconf->proxy;
+	ketama_serverinfo* serverinfo = hashring_getserver_info(proxy->hashring);
+
+	char *addr;
+	char *token;
+
+	int tcp_fd, udp_fd, port;
+
+	struct sockaddr_in proxy_addr;
+
+	proxy_conn_info* proxy_conn;
+
+	for (int i = 0; i < serverinfo->numservers; i++) {
+		addr = serverinfo->serverinfo[i].addr;
+
+		parse_ip(&proxy_addr, addr);
+
+		// Create UPD socket
+		udp_fd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (udp_fd < 0) {
+			syslog(LOG_ERR, "Failed to create UDP socket");
+			return 1;
+		}
+
+		// Create TCP socket
+		tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
+		if (tcp_fd < 0) {
+			syslog(LOG_ERR, "Failed to create TCP socket");
+			return 1;
+		}
+
+		// Open TCP Connection
+		if (connect(tcp_fd, (struct sockaddr *)&proxy_addr, sizeof(struct sockaddr))) {
+			syslog(LOG_ERR, "Unable to connect to: %s", addr);
+			// attempt to reconnect now or do this later???
+			// Reroute?
+			continue;
+		}
+
+		// Set socket options
+		if (set_client_sockopts(tcp_fd)) {
+			continue;
+		}
+
+		// Debug info
+		syslog(LOG_DEBUG, "Establish TCP proxy connection: %s %d [%d]",
+				inet_ntoa(proxy_addr.sin_addr), ntohs(proxy_addr.sin_port), tcp_fd);
+
+		// Create proxy_conn struct
+		proxy_conn = get_proxy_conn(netconf);
+
+		//void * v_conn = (void *) proxy_conn;
+
+		//proxy_conn_info * pci = (proxy_conn_info *) v_conn;
+
+		// test if I can do this implicitly
+
+		// Store proxy connection for later use
+		proxy_conn->tcp_fd = tcp_fd;
+		proxy_conn->udp_fd = udp_fd;
+
+		proxy_put_conn(proxy, addr, (void*) proxy_conn);
+
+		// Initialize the libev stuff
+		ev_io_init(&proxy_conn->tcp->client, prepare_event, tcp_fd, EV_READ);
+		ev_io_init(&proxy_conn->tcp->write_client, prepare_event, tcp_fd, EV_WRITE);
+
+		ev_io_init(&proxy_conn->udp->client, prepare_event, udp_fd, EV_READ);
+		ev_io_init(&proxy_conn->udp->write_client, prepare_event, udp_fd, EV_WRITE);
+
+	}
+
+	return 0;
+}
 
 /**
  * Initializes the TCP listener
@@ -233,6 +336,8 @@ static int setup_udp_listener(statsite_proxy_networking *netconf) {
     addr.sin_port = htons(netconf->config->udp_port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
+
+
     // Make the socket, bind and listen
     int udp_listener_fd = socket(PF_INET, SOCK_DGRAM, 0);
     int optval = 1;
@@ -267,16 +372,16 @@ static int setup_udp_listener(statsite_proxy_networking *netconf) {
  * Initializes the networking interfaces
  * @arg config Takes the statsite_proxy server configuration
  * @arg netconf Output. The configuration for the networking stack.
- * @arg hashring Pointer to hashring for routing metrics via consistent hashing
+ * @arg proxy Pointer to proxy for routing metrics via consistent hashing
  */
-int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out, hashring *hashringptr) {
+int init_networking(statsite_proxy_config *config, statsite_proxy_networking **netconf_out, proxy *proxy) {
     // Make the netconf structure
     statsite_proxy_networking *netconf = calloc(1, sizeof(struct statsite_proxy_networking));
 
     // Initialize
     netconf->events = NULL;
     netconf->config = config;
-    netconf->hashring = hashringptr;
+    netconf->proxy = proxy;
     netconf->should_run = 1;
     netconf->thread = NULL;
 
@@ -294,6 +399,14 @@ int init_networking(statsite_proxy_config *config, statsite_proxy_networking **n
         syslog(LOG_CRIT, "Failed to initialize libev!");
         free(netconf);
         return 1;
+    }
+
+    // Setup proxy connections
+    int proxy_res = setup_proxy_connections(netconf);
+    if (proxy_res != 0) {
+    	// free proxy connections stuff
+    	free(netconf);
+    	return 1;
     }
 
     // Setup the TCP listener
@@ -624,8 +737,8 @@ static void invoke_event_handler(worker_ev_userdata* data) {
     if (watcher == &data->netconf->udp_client) {
         // Read the message and process
         if (!handle_udp_message(watcher, data)) {
-            statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->hashring, watcher->data};
-            handle_client_connect(&handle);
+            statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->proxy, watcher->data};
+            handle_client_connect(&handle, UDP);
         }
 
         // Reschedule the listener
@@ -643,8 +756,8 @@ static void invoke_event_handler(worker_ev_userdata* data) {
     incref_client_connection(conn);
 
     if (!handle_client_data(watcher, data)) {
-        statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->hashring, watcher->data};
-        handle_client_connect(&handle);
+        statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->proxy, watcher->data};
+        handle_client_connect(&handle, TCP);
     }
 
     // Reschedule the watcher, unless told otherwise.
@@ -709,9 +822,8 @@ int shutdown_networking(statsite_proxy_networking *netconf) {
 
     // Stop the other timers
     ev_async_stop(&netconf->loop_async);
-    ev_timer_stop(&netconf->flush_timer);
 
-    // TODO: Close all the client connections
+    // TODO: Close all the client/proxy connections
     // ??? For now, we just leak the memory
     // since we are shutdown down anyways...
 
@@ -744,6 +856,20 @@ static void decref_client_connection(conn_info *conn) {
 }
 
 /**
+ * Increases the reference count of the
+ * connection info object.
+ */
+static void incref_proxy_connection(conn_info *conn) {
+    // Atomic decrement
+    conn->ref_count++;
+}
+
+static void decref_proxy_connection(conn_info *conn) {
+    // Atomic decrement
+    int refs = --conn->ref_count;
+}
+
+/**
  * Called to close and cleanup a client connection.
  * Must be called when the connection is not already
  * scheduled. e.g. After ev_io_stop() has been called.
@@ -752,6 +878,30 @@ static void decref_client_connection(conn_info *conn) {
  * @arg conn The connection to close
  */
 void close_client_connection(conn_info *conn) {
+    // Stop scheduling
+    conn->should_schedule = 0;
+
+    // Atomic decrement
+    int refs = --conn->ref_count;
+
+    // If our refcount is still non-zero, do nothing.
+    if (refs != 0) {
+        return;
+    }
+
+    // Close the connection
+    private_close_connection(conn);
+}
+
+/**
+ * Called to close and cleanup a client connection.
+ * Must be called when the connection is not already
+ * scheduled. e.g. After ev_io_stop() has been called.
+ * Leaves the connection in the conns list so that it
+ * can be re-used.
+ * @arg conn The connection to close
+ */
+void close_proxy_connection(conn_info *conn) {
     // Stop scheduling
     conn->should_schedule = 0;
 
@@ -785,87 +935,80 @@ static void private_close_connection(conn_info *conn) {
 
 /**
  * Sends a response to a client.
- * @arg conn The client connection
- * @arg response_buffers A list of response buffers to send
- * @arg buf_sizes A list of the buffer sizes
- * @arg num_bufs The number of response buffers
+ * @arg connptr The client connection
+ * @arg msg_buffer A list of response buffers to send
+ * @arg buf_size A list of the buffer sizes
+ * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-int send_client_response(conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs) {
+int send_proxy_msg(void *connptr, char *msg_buffer, int buf_size, PROXY_MSG_TYPE msg_type) {
+
+    // Retrieve connection
+    proxy_conn_info * proxy_conn = (proxy_conn_info *) connptr;
+    conn_info * conn;
+
+    if (msg_type == UDP) {
+    	conn = proxy_conn->udp;
+    } else if (msg_type == TCP) {
+    	conn = proxy_conn->tcp;
+    }
+
     // Bail if we shouldn't schedule
     if (!conn->should_schedule) return 0;
 
     // Check if we are doing buffered writes
     if (conn->use_write_buf) {
-        return send_client_response_buffered(conn, response_buffers, buf_sizes, num_bufs);
+        return send_proxy_msg_buffered(conn, msg_buffer, buf_size);
     } else {
-        return send_client_response_direct(conn, response_buffers, buf_sizes, num_bufs);
+        return send_proxy_msg_direct(conn, msg_buffer, buf_size);
     }
 }
 
 
-static int send_client_response_buffered(conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs) {
+static int send_proxy_msg_buffered(conn_info *conn, char *msg_buffer, int buf_size) {
     // Might not be using buffered writes anymore
     if (!conn->use_write_buf) {
-        return send_client_response_direct(conn, response_buffers, buf_sizes, num_bufs);
+        return send_proxy_msg_direct(conn, msg_buffer, buf_size);
     }
 
     // Copy the buffers to the output buffer
     int res = 0;
-    for (int i=0; i< num_bufs; i++) {
-        res = circbuf_write(&conn->output, response_buffers[i], buf_sizes[i]);
-        if (res) break;
-    }
-    return res;
+    return circbuf_write(&conn->output, msg_buffer, buf_size);
+
 }
 
 
-static int send_client_response_direct(conn_info *conn, char **response_buffers, int *buf_sizes, int num_bufs) {
+static int send_proxy_msg_direct(conn_info *conn, char *msg_buffer, int buf_size) {
     // Stack allocate the iovectors
-    struct iovec *vectors = alloca(num_bufs * sizeof(struct iovec));
+    struct iovec vector;
 
     // Setup all the pointers
-    ssize_t total_bytes = 0;
-    for (int i=0; i < num_bufs; i++) {
-        vectors[i].iov_base = response_buffers[i];
-        vectors[i].iov_len = buf_sizes[i];
-        total_bytes += buf_sizes[i];
-    }
+    vector.iov_base = msg_buffer;
+	vector.iov_len = buf_size;
 
     // Perform the write
-    ssize_t sent = writev(conn->client.fd, vectors, num_bufs);
-    if (sent == total_bytes) return 0;
+    ssize_t sent = writev(conn->client.fd, &vector, 1);
+    if (sent == buf_size) return 0;
 
     // Check for a fatal error
     if (sent == -1) {
         if (errno != EAGAIN && errno != EINTR && errno != EWOULDBLOCK) {
             syslog(LOG_ERR, "Failed to send() to connection [%d]! %s.",
                     conn->client.fd, strerror(errno));
+
+            // Probably want to try and reopen connection here???
             close_client_connection(conn);
             return 1;
         }
     }
 
-    // Figure out which buffer we left off on
-    int skip_bytes = 0;
-    int index = 0;
-    for (index; index < num_bufs; index++) {
-        skip_bytes += buf_sizes[index];
-        if (skip_bytes > sent) {
-            skip_bytes -= buf_sizes[index];
-            break;
-        }
-    }
-
-    // Copy the buffers
-    int res, offset;
-    for (int i=index; i < num_bufs; i++) {
-        offset = 0;
-        if (i == index && skip_bytes < sent) {
-            offset = sent - skip_bytes;
-        }
-        res = circbuf_write(&conn->output, response_buffers[i] + offset, buf_sizes[i] - offset);
-        if (res) return 1;
+    // Copy unsent data to circ buffer
+    int res;
+    if (sent < buf_size) {
+		res = circbuf_write(&conn->output, msg_buffer + sent, buf_size - sent);
+		if (res) {
+			return 1;
+		}
     }
 
     // Setup the async write
@@ -1064,6 +1207,42 @@ int read_client_bytes(statsite_proxy_conn_info *conn, int bytes, char** buf, int
     return 0;
 }
 
+/**
+ * Attempts to parse ip address and port for addr_buff
+ *
+ * @arg socket_addr Address structure populated with parsed ip and port
+ * @arg addr_buff ip and port to parse either "xxx.xxx.xxx" or "xxx.xxx.xxx:xxxx"
+ * @return 0 on success, 1 on error.
+ */
+static int parse_ip(struct sockaddr_in *socket_addr, char *addr_buf) {
+	char buf[22];
+	char *token;
+	int port;
+
+	// Make copy of addr_buff
+	strncpy(buf, addr_buf, strlen(addr_buf)+1);
+
+	// Extract address
+	token = strtok(buf, ":");
+	if (! token) {
+		syslog(LOG_ERR, "Failed read server address: %s", addr_buf);
+		return 1;
+	}
+
+	bzero(socket_addr, sizeof(struct sockaddr_in));
+
+	socket_addr->sin_family = AF_INET;
+	socket_addr->sin_addr.s_addr = inet_addr(token);
+
+	// Attempt to extract port
+	port = atoi(strtok(NULL, " "));
+	if (port) {
+		socket_addr->sin_port = htons(port);
+	}
+
+	return 0;
+}
+
 
 /**
  * Sets the client socket options.
@@ -1124,6 +1303,29 @@ static conn_info* get_conn(statsite_proxy_networking *netconf) {
     conn->write_client.data = conn;
 
     return conn;
+}
+
+/**
+ * Returns proxy_conn struct with conn_info for udp and tcp connections
+ *
+ * @arg statsite_proxy_networking stores state of networking stack
+ * @return proxy_conn_info
+ */
+static proxy_conn_info* get_proxy_conn(statsite_proxy_networking *netconf) {
+	proxy_conn_info* proxy_info = malloc(sizeof(proxy_conn_info));
+
+	proxy_info->tcp = get_conn(netconf);
+
+	// Allocate a connection object for the UDP socket,
+	// ensure a min-buffer size of 64K
+	conn_info *conn = get_conn(netconf);
+	while (circbuf_avail_buf(&conn->output) < 65536) {
+		circbuf_grow_buf(&conn->output);
+	}
+
+	proxy_info->udp = conn;
+
+	return proxy_info;
 }
 
 /*

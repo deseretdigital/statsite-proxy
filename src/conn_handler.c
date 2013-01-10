@@ -26,8 +26,8 @@
 #define BIN_OUT_PCT     0x80
 
 /* Static method declarations */
-static int handle_binary_client_connect(statsite_proxy_conn_handler *handle);
-static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle);
+static int handle_binary_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type);
+static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type);
 static int buffer_after_terminator(char *buf, int buf_len, char terminator, char **after_term, int *after_len);
 
 // This is the magic byte that indicates we are handling
@@ -52,18 +52,19 @@ void init_conn_handler(statsite_proxy_config *config) {
  * consume all the input possible, and generate responses
  * to all requests.
  * @arg handle The connection related information
+ * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-int handle_client_connect(statsite_proxy_conn_handler *handle) {
+int handle_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE type) {
     // Try to read the magic character, bail if no data
     unsigned char magic = 0;
     if (peek_client_bytes(handle->conn, 1, &magic) == -1) return 0;
 
     // Check the magic byte
     if (magic == BINARY_MAGIC_BYTE)
-        return handle_binary_client_connect(handle);
+        return handle_binary_client_connect(handle, type);
     else
-        return handle_ascii_client_connect(handle);
+        return handle_ascii_client_connect(handle, type);
 }
 
 
@@ -71,16 +72,24 @@ int handle_client_connect(statsite_proxy_conn_handler *handle) {
  * Invoked to handle ASCII commands. This is the default
  * mode for statsite-proxy, to be backwards compatible with statsd
  * @arg handle The connection related information
+ * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
+static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type) {
     // Look for the next command line
     char *buf, *val_str, *type_str;
     metric_type type;
-    int buf_len, should_free, status, after_len;
+    int buf_len, should_free, status, after_len, res;
     while (1) {
         status = extract_to_terminator(handle->conn, '\n', &buf, &buf_len, &should_free);
         if (status == -1) return 0; // Return if no command is available
+
+        // Stack allocate space for message buffer
+        char* proxy_msg = alloca((buf_len)* sizeof(char));
+        strncpy(proxy_msg, buf, buf_len);
+
+        // Make sure to terminate strings
+        *(proxy_msg + buf_len-1) = '\n';
 
         // Check for a valid metric
         // Scan for the colon
@@ -103,13 +112,19 @@ static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
                     type = UNKNOWN;
             }
 
-            // Apply consistent hashing
-            char* server = hashring_getserver(handle->hashring, buf);
+            // Route metric via consistent hash based on metric key
+            void* conn;
 
-            printf("Recieved: %s -> %s\n", buf, server);
+            res = proxy_get_route_conn(handle->proxy, buf, &conn);
+            if (res != 0) {
+            	syslog(LOG_WARNING, "Failed to find metric route! Metric key: %s", buf);
+            }
 
             // Forward metric
-
+            res = send_proxy_msg(conn, proxy_msg, buf_len, msg_type);
+            if (res != 0) {
+				syslog(LOG_WARNING, "Failed to route metric route! Metric key: %s", buf);
+			}
 
         } else {
             syslog(LOG_WARNING, "Failed parse metric! Input: %s", buf);
@@ -126,9 +141,10 @@ static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
 /**
  * Invoked to handle binary commands.
  * @arg handle The connection related information
+ * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-static int handle_binary_client_connect(statsite_proxy_conn_handler *handle) {
+static int handle_binary_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type) {
     metric_type type;
     int status, should_free;
     char *key;
@@ -190,7 +206,7 @@ static int handle_binary_client_connect(statsite_proxy_conn_handler *handle) {
         }
 
         // Apply consistent hashing
-        char* server = hashring_getserver(handle->hashring, key);
+        //char* server = hashring_getserver(handle->hashring, key);
 
 
         // Make sure to free the command buffer if we need to
