@@ -1,5 +1,5 @@
 == TODO ==
 
  * Add hashring unit tests
- * Forward metrics to proxied servers
+ * Add support for binary metric forwarding
  
