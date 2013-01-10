@@ -36,6 +36,6 @@ void init_conn_handler(statsite_proxy_config *config);
  * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-int handle_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE type);
+int handle_client_connect(statsite_proxy_conn_handler *handle);
 
 #endif

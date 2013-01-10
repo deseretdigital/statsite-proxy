@@ -104,13 +104,13 @@ struct conn_info {
 typedef struct conn_info conn_info;
 
 /**
- * Wrapper for TCP and UDP conn_info
+ * Wrapper for TCP conn_info
  */
 typedef struct {
+	int connected;
 	int tcp_fd;
 	conn_info *tcp;
-	int udp_fd;
-	conn_info *udp;
+	char *addr;
 } proxy_conn_info;
 
 
@@ -188,6 +188,7 @@ static void decref_proxy_connection(conn_info *conn);
 static void private_close_connection(conn_info *conn);
 
 static int parse_ip(struct sockaddr_in *socket_addr, char *addr_buf);
+static int connect_proxy(proxy_conn_info *proxy_conn);
 
 // Circular buffer method
 static void circbuf_init(circular_buffer *buf);
@@ -216,69 +217,23 @@ static int setup_proxy_connections(statsite_proxy_networking *netconf) {
 	char *addr;
 	char *token;
 
-	int tcp_fd, udp_fd, port;
-
-	struct sockaddr_in proxy_addr;
+	int tcp_fd;
 
 	proxy_conn_info* proxy_conn;
 
 	for (int i = 0; i < serverinfo->numservers; i++) {
+		addr = NULL;
 		addr = serverinfo->serverinfo[i].addr;
-
-		parse_ip(&proxy_addr, addr);
-
-		// Create UPD socket
-		udp_fd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-		if (udp_fd < 0) {
-			syslog(LOG_ERR, "Failed to create UDP socket");
-			return 1;
-		}
-
-		// Create TCP socket
-		tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
-		if (tcp_fd < 0) {
-			syslog(LOG_ERR, "Failed to create TCP socket");
-			return 1;
-		}
-
-		// Open TCP Connection
-		if (connect(tcp_fd, (struct sockaddr *)&proxy_addr, sizeof(struct sockaddr))) {
-			syslog(LOG_ERR, "Unable to connect to: %s", addr);
-			// attempt to reconnect now or do this later???
-			// Reroute?
-			continue;
-		}
-
-		// Set socket options
-		if (set_client_sockopts(tcp_fd)) {
-			continue;
-		}
-
-		// Debug info
-		syslog(LOG_DEBUG, "Establish TCP proxy connection: %s %d [%d]",
-				inet_ntoa(proxy_addr.sin_addr), ntohs(proxy_addr.sin_port), tcp_fd);
 
 		// Create proxy_conn struct
 		proxy_conn = get_proxy_conn(netconf);
+		proxy_conn->addr = addr;
 
-		//void * v_conn = (void *) proxy_conn;
-
-		//proxy_conn_info * pci = (proxy_conn_info *) v_conn;
-
-		// test if I can do this implicitly
+		// Attempt to connect
+		connect_proxy(proxy_conn);
 
 		// Store proxy connection for later use
-		proxy_conn->tcp_fd = tcp_fd;
-		proxy_conn->udp_fd = udp_fd;
-
 		proxy_put_conn(proxy, addr, (void*) proxy_conn);
-
-		// Initialize the libev stuff
-		ev_io_init(&proxy_conn->tcp->client, prepare_event, tcp_fd, EV_READ);
-		ev_io_init(&proxy_conn->tcp->write_client, prepare_event, tcp_fd, EV_WRITE);
-
-		ev_io_init(&proxy_conn->udp->client, prepare_event, udp_fd, EV_READ);
-		ev_io_init(&proxy_conn->udp->write_client, prepare_event, udp_fd, EV_WRITE);
 
 	}
 
@@ -738,7 +693,7 @@ static void invoke_event_handler(worker_ev_userdata* data) {
         // Read the message and process
         if (!handle_udp_message(watcher, data)) {
             statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->proxy, watcher->data};
-            handle_client_connect(&handle, UDP);
+            handle_client_connect(&handle);
         }
 
         // Reschedule the listener
@@ -757,7 +712,7 @@ static void invoke_event_handler(worker_ev_userdata* data) {
 
     if (!handle_client_data(watcher, data)) {
         statsite_proxy_conn_handler handle = {data->netconf->config, data->netconf->proxy, watcher->data};
-        handle_client_connect(&handle, TCP);
+        handle_client_connect(&handle);
     }
 
     // Reschedule the watcher, unless told otherwise.
@@ -941,17 +896,22 @@ static void private_close_connection(conn_info *conn) {
  * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-int send_proxy_msg(void *connptr, char *msg_buffer, int buf_size, PROXY_MSG_TYPE msg_type) {
+int send_proxy_msg(void *connptr, char *msg_buffer, int buf_size) {
 
     // Retrieve connection
     proxy_conn_info * proxy_conn = (proxy_conn_info *) connptr;
     conn_info * conn;
 
-    if (msg_type == UDP) {
-    	conn = proxy_conn->udp;
-    } else if (msg_type == TCP) {
-    	conn = proxy_conn->tcp;
+    // Check that we are connected
+    if (! proxy_conn->connected) {
+    	int res = connect_proxy(proxy_conn);
+    	if (res) {
+    		syslog(LOG_DEBUG, "Failed to send: %s", msg_buffer);
+    		return 1;
+    	}
     }
+
+    conn = proxy_conn->tcp;
 
     // Bail if we shouldn't schedule
     if (!conn->should_schedule) return 0;
@@ -1208,6 +1168,50 @@ int read_client_bytes(statsite_proxy_conn_info *conn, int bytes, char** buf, int
 }
 
 /**
+ * Attempts to establish connection
+ * Updates connected flag in proxy_conn_info
+ *
+ * @arg proxy_conn proxy connection struct
+ * @return 0 on success, 1 on error.
+ */
+static int connect_proxy(proxy_conn_info *proxy_conn) {
+	int tcp_fd;
+	struct sockaddr_in proxy_addr;
+
+	parse_ip(&proxy_addr, proxy_conn->addr);
+
+	// Create TCP socket
+	tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (tcp_fd < 0) {
+		syslog(LOG_ERR, "Failed to create TCP socket");
+		return 1;
+	}
+
+	// Open TCP Connection
+	int res = connect(tcp_fd, (struct sockaddr *)&proxy_addr, sizeof(struct sockaddr));
+	if (res) {
+		proxy_conn->connected = 0;
+		close(tcp_fd);
+		syslog(LOG_DEBUG, "Unable to connect to: %s", proxy_conn->addr);
+		return 1;
+	}
+
+	// Set socket options
+	set_client_sockopts(tcp_fd);
+	syslog(LOG_DEBUG, "Establish TCP proxy connection: %s %d [%d]",
+					inet_ntoa(proxy_addr.sin_addr), ntohs(proxy_addr.sin_port), tcp_fd);
+
+	proxy_conn->connected = 1;
+	proxy_conn->tcp_fd = tcp_fd;
+
+	// Initialize the libev stuff
+	ev_io_init(&proxy_conn->tcp->client, prepare_event, tcp_fd, EV_READ);
+	ev_io_init(&proxy_conn->tcp->write_client, prepare_event, tcp_fd, EV_WRITE);
+
+	return 0;
+}
+
+/**
  * Attempts to parse ip address and port for addr_buff
  *
  * @arg socket_addr Address structure populated with parsed ip and port
@@ -1316,14 +1320,7 @@ static proxy_conn_info* get_proxy_conn(statsite_proxy_networking *netconf) {
 
 	proxy_info->tcp = get_conn(netconf);
 
-	// Allocate a connection object for the UDP socket,
-	// ensure a min-buffer size of 64K
-	conn_info *conn = get_conn(netconf);
-	while (circbuf_avail_buf(&conn->output) < 65536) {
-		circbuf_grow_buf(&conn->output);
-	}
 
-	proxy_info->udp = conn;
 
 	return proxy_info;
 }

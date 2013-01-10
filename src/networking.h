@@ -59,7 +59,7 @@ void close_proxy_connection(statsite_proxy_conn_info *conn);
  * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-int send_proxy_msg(void *connptr, char *msg_buffer, int buf_size, PROXY_MSG_TYPE msg_type);
+int send_proxy_msg(void *connptr, char *msg_buffer, int buf_size);
 
 /**
  * This method is used to conveniently extract commands from the

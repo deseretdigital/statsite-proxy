@@ -26,8 +26,8 @@
 #define BIN_OUT_PCT     0x80
 
 /* Static method declarations */
-static int handle_binary_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type);
-static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type);
+static int handle_binary_client_connect(statsite_proxy_conn_handler *handle);
+static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle);
 static int buffer_after_terminator(char *buf, int buf_len, char terminator, char **after_term, int *after_len);
 
 // This is the magic byte that indicates we are handling
@@ -52,19 +52,18 @@ void init_conn_handler(statsite_proxy_config *config) {
  * consume all the input possible, and generate responses
  * to all requests.
  * @arg handle The connection related information
- * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-int handle_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE type) {
+int handle_client_connect(statsite_proxy_conn_handler *handle) {
     // Try to read the magic character, bail if no data
     unsigned char magic = 0;
     if (peek_client_bytes(handle->conn, 1, &magic) == -1) return 0;
 
     // Check the magic byte
     if (magic == BINARY_MAGIC_BYTE)
-        return handle_binary_client_connect(handle, type);
+        return handle_binary_client_connect(handle);
     else
-        return handle_ascii_client_connect(handle, type);
+        return handle_ascii_client_connect(handle);
 }
 
 
@@ -72,10 +71,9 @@ int handle_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE ty
  * Invoked to handle ASCII commands. This is the default
  * mode for statsite-proxy, to be backwards compatible with statsd
  * @arg handle The connection related information
- * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type) {
+static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
     // Look for the next command line
     char *buf, *val_str, *type_str;
     metric_type type;
@@ -121,7 +119,7 @@ static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle, PROX
             }
 
             // Forward metric
-            res = send_proxy_msg(conn, proxy_msg, buf_len, msg_type);
+            res = send_proxy_msg(conn, proxy_msg, buf_len);
             if (res != 0) {
 				syslog(LOG_WARNING, "Failed to route metric route! Metric key: %s", buf);
 			}
@@ -141,10 +139,9 @@ static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle, PROX
 /**
  * Invoked to handle binary commands.
  * @arg handle The connection related information
- * @arg type message type either TCP or UDP
  * @return 0 on success.
  */
-static int handle_binary_client_connect(statsite_proxy_conn_handler *handle, PROXY_MSG_TYPE msg_type) {
+static int handle_binary_client_connect(statsite_proxy_conn_handler *handle) {
     metric_type type;
     int status, should_free;
     char *key;
