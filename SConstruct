@@ -1,6 +1,6 @@
 import platform
 
-optimize = '-03'
+optimize = '-O3'
 
 envmurmur = Environment(CPPPATH = ['deps/murmurhash/'], CPPFLAGS="-fno-exceptions " + optimize)
 murmur = envmurmur.Library('murmur', Glob("deps/murmurhash/*.cpp"))
