@@ -77,10 +77,17 @@ static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
     // Look for the next command line
     char *buf, *val_str, *type_str;
     metric_type type;
-    int buf_len, should_free, status, after_len;
+    int buf_len, should_free, status, after_len, res;
     while (1) {
         status = extract_to_terminator(handle->conn, '\n', &buf, &buf_len, &should_free);
         if (status == -1) return 0; // Return if no command is available
+
+        // Stack allocate space for message buffer
+        char* proxy_msg = alloca((buf_len)* sizeof(char));
+        strncpy(proxy_msg, buf, buf_len);
+
+        // Make sure to terminate strings
+        *(proxy_msg + buf_len-1) = '\n';
 
         // Check for a valid metric
         // Scan for the colon
@@ -103,13 +110,19 @@ static int handle_ascii_client_connect(statsite_proxy_conn_handler *handle) {
                     type = UNKNOWN;
             }
 
-            // Apply consistent hashing
-            char* server = hashring_getserver(handle->hashring, buf);
+            // Route metric via consistent hash based on metric key
+            void* conn;
 
-            printf("Recieved: %s -> %s\n", buf, server);
+            res = proxy_get_route_conn(handle->proxy, buf, &conn);
+            if (res != 0) {
+            	syslog(LOG_WARNING, "Failed to find metric route! Metric key: %s", buf);
+            }
 
             // Forward metric
-
+            res = send_proxy_msg(conn, proxy_msg, buf_len);
+            if (res != 0) {
+				syslog(LOG_WARNING, "Failed to route metric route! Metric key: %s", buf);
+			}
 
         } else {
             syslog(LOG_WARNING, "Failed parse metric! Input: %s", buf);
@@ -190,7 +203,7 @@ static int handle_binary_client_connect(statsite_proxy_conn_handler *handle) {
         }
 
         // Apply consistent hashing
-        char* server = hashring_getserver(handle->hashring, key);
+        //char* server = hashring_getserver(handle->hashring, key);
 
 
         // Make sure to free the command buffer if we need to

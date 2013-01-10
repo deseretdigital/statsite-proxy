@@ -11,13 +11,14 @@ struct hashring {
 
 /**
  * Creates a new hashring and allocates space for it.
+ *
  * @arg hashringptr The value of this pointer will contain the initialized hashring.
  * @arg filename The server-definition file which defines our hashring.
  * @return 0 on success 1 on failure.
  */
 int hashring_init(hashring **hashringptr, char* filename) {
 
-	// Allocate the hashring
+	// Allocate space for hashring struct
 	*hashringptr = calloc(1, sizeof(hashring));
 
 	// Initialize continuum
@@ -35,11 +36,12 @@ int hashring_init(hashring **hashringptr, char* filename) {
 
 /**
  * Selects server based on consistent hash of key.
+ *
  * @arg hashringptr Hashring struct returned by hashring_init.
  * @arg key The key to be hashed.
  * @return The server (ip:port) that key hashes to.
  */
-const char* hashring_getserver(hashring *hashringptr, char *key) {
+char* hashring_getserver(hashring *hashringptr, char *key) {
 
 	mcs* server = ketama_get_server(key, hashringptr->continuum);
 
@@ -48,6 +50,7 @@ const char* hashring_getserver(hashring *hashringptr, char *key) {
 
 /**
  * Retrieves server definition info
+ *
  * @arg hashring Hashring struct returned by hashring_init.
  * @return pointer to server info struct
  */
@@ -56,19 +59,31 @@ ketama_serverinfo* hashring_getserver_info(hashring *hashring) {
 }
 
 /**
- * Destroys a hashring and cleans up all associated memory
- * @arg hashringptr Pointer to the hashring to be destroy. Frees memory.
+ * Retrieves total number of servers in hashring
+ *
+ * @arg hashring Hashring struct returned by hashring_init.
+ * @return number of servers
  */
-void hashring_destroy(hashring *hashringptr) {
+int hashring_get_numservers(hashring *hashring) {
+	return hashring->serverinfo.numservers;
+}
 
-	free(hashringptr->serverinfo.serverinfo);
-    ketama_smoke(hashringptr->continuum);
+/**
+ * Destroys a hashring and frees all associated memory
+ *
+ * @arg hashring Pointer to the hashring struct to be destroy.
+ */
+void hashring_destroy(hashring *hashring) {
 
-    free(hashringptr);
+	free(hashring->serverinfo.serverinfo);
+    ketama_smoke(hashring->continuum);
+
+    free(hashring);
 }
 
 /**
  * Retrieve error message.
+ *
  * @return The latest error that occurred.
  */
 char* hashring_error() {
