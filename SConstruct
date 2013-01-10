@@ -1,6 +1,6 @@
 import platform
 
-optimize = '-O'
+optimize = '-03'
 
 envmurmur = Environment(CPPPATH = ['deps/murmurhash/'], CPPFLAGS="-fno-exceptions " + optimize)
 murmur = envmurmur.Library('murmur', Glob("deps/murmurhash/*.cpp"))
@@ -14,7 +14,8 @@ ketama = envketama.Library('ketama', Glob("deps/libketama/md5.c") + Glob("deps/l
 env_statsite_with_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE -Wall -Werror ' + optimize + ' -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')
 env_statsite_without_err = Environment(CCFLAGS = '-std=c99 -D_GNU_SOURCE ' + optimize + ' -pthread -Ideps/inih/ -Ideps/libev/ -Ideps/libketama/ -Isrc/')
 
-objs = env_statsite_with_err.Object('src/hashring', 'src/hashring.c')         + \
+objs = env_statsite_with_err.Object('src/proxy', 'src/proxy.c')               + \
+        env_statsite_with_err.Object('src/hashring', 'src/hashring.c')        + \
         env_statsite_with_err.Object('src/hashmap', 'src/hashmap.c')          + \
         env_statsite_with_err.Object('src/heap', 'src/heap.c')                + \
         env_statsite_with_err.Object('src/config', 'src/config.c')            + \

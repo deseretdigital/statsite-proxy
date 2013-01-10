@@ -17,8 +17,8 @@
  * to grow quickly.
  */
 static const statsite_proxy_config DEFAULT_CONFIG = {
-    8150,                  // TCP defaults to 8125
-    8150,                  // UDP on 8125
+    8150,                  // TCP defaults to 8150
+    8150,                  // UDP on 8150
     "config/servers.conf", // default proxied servers file
     "DEBUG",               // DEBUG level
     LOG_DEBUG,
