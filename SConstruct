@@ -24,7 +24,7 @@ objs = env_statsite_with_err.Object('src/proxy', 'src/proxy.c')               + 
 
 statsite_proxy_libs = ["m", "pthread", murmur, inih, ketama]
 if platform.system() == 'Linux':
-   statsite_libs.append("rt")
+   statsite_proxy_libs.append("rt")
 
 statsite_proxy = env_statsite_with_err.Program('statsite_proxy', objs + ["src/statsite_proxy.c"], LIBS=statsite_proxy_libs)
 statsite_proxy_test = env_statsite_without_err.Program('test_runner', objs + Glob("tests/runner.c"), LIBS=statsite_proxy_libs + ["check"])
