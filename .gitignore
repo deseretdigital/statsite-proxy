@@ -15,6 +15,7 @@
 .sconsign.dblite
 tests/build/
 test_runner
-statsite
+statsite_proxy
 .vagrant
 *.pyc
+.libs
