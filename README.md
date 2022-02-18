@@ -1,3 +1,8 @@
+# ARCHIVE NOTICE
+
+This project is being archived, left for historical reference, and
+is not recommended for any production use.
+
 Statsite-Proxy (Pre-alpha)
 ==========================
 
